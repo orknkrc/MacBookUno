@@ -265,6 +265,15 @@ Scripts/make-app.sh             Builds MacBookUno.app
 `LidAngleKit` never imports AppKit and knows nothing about displays, so it can
 be reused on its own.
 
-## License
+## Credits and license
 
-[MIT](LICENSE) © Orkun Karaca
+Inspired by the folding animation of Apple's iPhone Duo. This is an independent
+project, not affiliated with or endorsed by Apple. Apple, MacBook and iPhone are
+trademarks of Apple Inc.
+
+The vendor/product IDs and HID usage values for the lid angle sensor were first
+surfaced by the community. Everything in this repository was re-verified against
+the device itself and written from scratch.
+
+Licensed under the [MIT License](LICENSE), © 2026 Orkun Karaca.
+There are no third-party dependencies, so no additional license terms apply.
