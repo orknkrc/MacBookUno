@@ -132,7 +132,9 @@ final class FoldController {
         }
 
         currentProgress = progress
-        overlay?.apply(progress: progress, direction: settings.sweepDirection)
+        overlay?.apply(progress: progress,
+                       direction: settings.sweepDirection,
+                       style: .blur)
         onUpdate?(raw, smoothed, progress)
 
         // Stop the loop once nothing is changing. Recomputing an identical mask

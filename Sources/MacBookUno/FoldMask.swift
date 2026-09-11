@@ -54,7 +54,10 @@ enum FoldMask {
     /// `progress` 0 = no frosting, 1 = the whole screen frosted.
     /// `height` is the height to generate at - pass the view's pixel height so
     /// that no vertical scaling happens.
-    static func image(progress: Double, direction: SweepDirection, height rawHeight: Int) -> NSImage {
+    static func image(progress: Double,
+                      direction: SweepDirection,
+                      height rawHeight: Int,
+                      softness: Double = softness) -> NSImage {
         let p = min(max(progress, 0), 1)
         let height = max(2, rawHeight)
 
@@ -111,8 +114,11 @@ enum FoldMask {
 
     /// The same mask as a `CGImage`, for use as a `CALayer` mask on plain views
     /// (`maskImage` only exists on `NSVisualEffectView`).
-    static func cgImage(progress: Double, direction: SweepDirection, height: Int) -> CGImage? {
-        let nsImage = image(progress: progress, direction: direction, height: height)
+    static func cgImage(progress: Double,
+                        direction: SweepDirection,
+                        height: Int,
+                        softness: Double = softness) -> CGImage? {
+        let nsImage = image(progress: progress, direction: direction, height: height, softness: softness)
         guard let rep = nsImage.representations.first as? NSBitmapImageRep else { return nil }
         return rep.cgImage
     }
