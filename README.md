@@ -89,6 +89,7 @@ happens while you work — that is the intended behavior. To actually see it:
 swift run MacBookUno -- --sweep        # animate the angle up and down
 swift run MacBookUno -- --simulate 30  # hold a fixed angle
 swift run MacBookUno -- --log          # print angle and fold amount
+swift run MacBookUno -- --pattern      # striped backdrop for measuring the ramp
 ```
 
 ### `lidangle` — the sensor CLI
@@ -134,20 +135,28 @@ a chance of working on models where the layout differs.
 ### The fold effect
 
 The first version blurred the whole screen uniformly, and it looked nothing like
-the reference. The point of the Duo animation is that the blur is a *region*:
-the moving flap is frosted, its boundary slides with the hinge, and the content
-behind it stays put.
+the reference. Watching the folding animation closely, the blur is not uniform
+and it is not a bounded region with a visible edge either: the blur **strength
+varies continuously across the panel**, heaviest where the surface is turning
+away from you and fading to sharp where it still faces you.
 
 So intensity is not `alphaValue` — it is spatial, via
 `NSVisualEffectView.maskImage`. `FoldMask` generates a bitmap whose alpha
-channel is a vertical gradient: opaque inside the frosted region, clear outside,
-with a smoothstep band (18% of screen height) between them. The boundary
-position tracks the lid angle **linearly** on purpose; easing it would make the
-boundary drift ahead of or behind the lid instead of moving with it.
+channel is a ramp spanning the full panel height, and the whole ramp slides as
+the lid moves. The position tracks the lid angle **linearly** on purpose; easing
+it would make the effect drift ahead of or behind the lid instead of moving with
+it.
 
-A very faint white band (alpha ≤ 0.13) rides the leading edge, because a mask
-can only say *where* the blur applies — it cannot add the highlight a real glass
-edge would catch.
+`NSVisualEffectView` gives no public control over blur radius, so a single pass
+leaves large shapes (window edges, the Dock silhouette) readable. Two additions
+fix that: a second `.withinWindow` effect view stacked on top, which blurs what
+the first pass drew into the window, and a faint light wash over the ramp —
+real frosted glass scatters light rather than only blurring, and without the
+wash the result keeps too much contrast to read as glass.
+
+The overlay pins itself to the dark appearance. `NSVisualEffectView` materials
+are appearance-aware, so left to follow the system the fold would look like two
+different effects depending on the user's theme.
 
 ### A measured gotcha in `maskImage`
 
@@ -157,8 +166,9 @@ mask in points and on a Retina display the gradient gets squeezed into the top
 half of the screen.
 
 This was measured, not guessed. `--pattern` lays a vertically striped backdrop
-under the overlay, and a per-row sharpness profile reads the boundary position
-directly:
+under the overlay, and a per-row sharpness profile reads the mask position
+directly. The numbers below were taken with a deliberately narrow ramp (0.18 of
+the height) so that a single boundary position could be read off precisely:
 
 | Mask height | Expected boundary | Measured |
 | --- | --- | --- |
@@ -170,10 +180,11 @@ Both wrong values match the "consumed in pixels, top-aligned" model exactly
 (512/1964 = 0.26 → boundary 0.87; 982/1964 = 0.50 → boundary 0.75). The fix is
 to build the mask at `bounds.height * backingScaleFactor`.
 
-![Boundary measurement](docs/boundary-measurement.png)
+![Blur ramp](docs/blur-ramp.png)
 
-*The `--pattern` backdrop at 50% fold: sharp stripes above the boundary,
-frosted below, with the soft transition in between.*
+*The `--pattern` backdrop at 50% fold. The stripes dissolve completely at the
+top and emerge continuously toward the bottom — the blur strength is a ramp
+across the panel, not a region with an edge.*
 
 ### Keeping it smooth
 

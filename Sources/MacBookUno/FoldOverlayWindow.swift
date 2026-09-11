@@ -1,29 +1,5 @@
 import AppKit
 
-/// The thin highlight along the leading edge of the frosted region.
-///
-/// On the iPhone Duo the flap's edge reads like a pane of glass catching light.
-/// The mask alone cannot produce that (a mask only says where the blur applies,
-/// it cannot add brightness), so we draw a separate, very faint band.
-private final class EdgeHighlightView: NSView {
-    var intensity: CGFloat = 0 { didSet { needsDisplay = true } }
-
-    override var isFlipped: Bool { false }
-
-    override func draw(_ dirtyRect: NSRect) {
-        guard intensity > 0.001 else { return }
-        let colors = [
-            NSColor(white: 1, alpha: 0),
-            NSColor(white: 1, alpha: 0.13 * intensity),
-            NSColor(white: 1, alpha: 0),
-        ]
-        guard let gradient = NSGradient(colors: colors,
-                                        atLocations: [0, 0.5, 1],
-                                        colorSpace: .deviceRGB) else { return }
-        gradient.draw(in: bounds, angle: 90)
-    }
-}
-
 /// The borderless, click-through window that covers the screen and carries the
 /// fold effect.
 ///
@@ -40,8 +16,28 @@ final class FoldOverlayWindow: NSWindow {
         rawValue: Int(CGWindowLevelForKey(.popUpMenuWindow)) - 1
     )
 
+    /// First pass: blurs the desktop behind the window.
     private let effectView = NSVisualEffectView()
-    private let highlight = EdgeHighlightView()
+    /// Second pass: blurs the FIRST pass's output again.
+    ///
+    /// `NSVisualEffectView` has no public blur-radius control, so a single pass
+    /// leaves large shapes (window edges, the Dock silhouette) readable. Stacking
+    /// a `.withinWindow` view on top blurs what the first pass drew into the
+    /// window, which is the documented way to get a heavier blur.
+    private let secondPass = NSVisualEffectView()
+    /// A faint light wash over the frosted region.
+    ///
+    /// Real frosted glass scatters light, so it does not just blur - it lifts
+    /// and desaturates what is behind it. Blur alone keeps too much contrast,
+    /// which is what makes the effect read as "sharp" next to the reference.
+    private let frost = NSView()
+
+    /// How strongly the light wash lifts the frosted region. Higher reads as
+    /// thicker glass; too high and the screen just looks washed out.
+    ///
+    /// Calibrated against the pinned dark appearance (see `init`), so it stays
+    /// correct regardless of the user's system theme.
+    private static let frostOpacity: CGFloat = 0.16
 
     /// Regenerating the mask every frame is wasteful; the current one is reused
     /// until progress moves by at least this much.
@@ -67,6 +63,14 @@ final class FoldOverlayWindow: NSWindow {
         isMovable = false
         hidesOnDeactivate = false
         alphaValue = 1
+        // The effect is pinned to the dark appearance on purpose.
+        //
+        // NSVisualEffectView materials are appearance-aware: the same material
+        // tints toward white in light mode and toward black in dark mode. Left to
+        // follow the system, the fold would look like two different effects
+        // depending on the user's theme. Pinning it means everyone sees the same
+        // frosted glass, and the light wash below is calibrated against it.
+        appearance = NSAppearance(named: .darkAqua)
 
         let container = NSView(frame: NSRect(origin: .zero, size: screen.frame.size))
         container.autoresizingMask = [.width, .height]
@@ -80,8 +84,24 @@ final class FoldOverlayWindow: NSWindow {
         effectView.state = .active
         container.addSubview(effectView)
 
-        highlight.autoresizingMask = [.width]
-        container.addSubview(highlight)
+        secondPass.frame = container.bounds
+        secondPass.autoresizingMask = [.width, .height]
+        // withinWindow: blends with what is already drawn in this window,
+        // i.e. the first pass's blurred output.
+        secondPass.blendingMode = .withinWindow
+        secondPass.material = .fullScreenUI
+        secondPass.state = .active
+        container.addSubview(secondPass)
+
+        frost.frame = container.bounds
+        frost.autoresizingMask = [.width, .height]
+        frost.wantsLayer = true
+        frost.layer?.backgroundColor = NSColor.white
+            .withAlphaComponent(FoldOverlayWindow.frostOpacity).cgColor
+        let frostMask = CALayer()
+        frostMask.contentsGravity = .resize
+        frost.layer?.mask = frostMask
+        container.addSubview(frost)
 
         contentView = container
         setFrame(screen.frame, display: false)
@@ -94,6 +114,8 @@ final class FoldOverlayWindow: NSWindow {
         setFrame(screen.frame, display: true)
         contentView?.frame = NSRect(origin: .zero, size: screen.frame.size)
         effectView.frame = NSRect(origin: .zero, size: screen.frame.size)
+        secondPass.frame = effectView.frame
+        frost.frame = effectView.frame
         // The mask has to be regenerated if the height changed.
         lastMaskProgress = -1
     }
@@ -109,7 +131,6 @@ final class FoldOverlayWindow: NSWindow {
         if !isVisible { orderFrontRegardless() }
 
         updateMaskIfNeeded(progress: p, direction: direction)
-        updateHighlight(progress: p, direction: direction)
     }
 
     func hideOverlay() {
@@ -136,23 +157,22 @@ final class FoldOverlayWindow: NSWindow {
         lastMaskProgress = quantized
         lastMaskDirection = direction
         lastMaskHeight = height
-        effectView.maskImage = FoldMask.image(progress: quantized, direction: direction, height: height)
+
+        guard let cgMask = FoldMask.cgImage(progress: quantized, direction: direction, height: height)
+        else { return }
+        let nsMask = NSImage(cgImage: cgMask, size: NSSize(width: cgMask.width, height: cgMask.height))
+        nsMask.resizingMode = .stretch
+        effectView.maskImage = nsMask
+        secondPass.maskImage = nsMask
+
+        // The frost layer is a plain view, so it is masked through its layer.
+        // Implicit animations are disabled: this runs up to 30 times a second and
+        // a quarter-second default animation would lag the sweep behind the lid.
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        frost.layer?.mask?.frame = frost.bounds
+        frost.layer?.mask?.contents = cgMask
+        CATransaction.commit()
     }
 
-    private func updateHighlight(progress: Double, direction: SweepDirection) {
-        guard let contentView else { return }
-        let height = contentView.bounds.height
-        let position = FoldMask.boundaryPosition(progress: progress, direction: direction)
-        let bandHeight = max(2, height * CGFloat(FoldMask.softness) * 0.9)
-        let centerY = CGFloat(position) * height
-
-        highlight.frame = NSRect(x: 0,
-                                 y: centerY - bandHeight / 2,
-                                 width: contentView.bounds.width,
-                                 height: bandHeight)
-        // Fade the highlight as the boundary leaves the screen, so no line is left hanging.
-        let fadeIn = min(1, progress / 0.10)
-        let fadeOut = min(1, (1 - progress) / 0.10)
-        highlight.intensity = CGFloat(min(fadeIn, fadeOut))
-    }
 }

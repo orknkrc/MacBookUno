@@ -38,9 +38,18 @@ enum FoldMask {
     /// scaling from the picture entirely.
     private static let width = 8
 
-    /// Width of the soft transition at the boundary, as a fraction of screen height.
-    /// A hard edge would read as a cut; this band gives it the feel of a glass edge.
-    static let softness: Double = 0.18
+    /// How far the blur ramp is spread, as a fraction of screen height.
+    ///
+    /// This is the whole character of the effect. A small value (0.2) gives a
+    /// frosted *region* with a soft edge sweeping across a sharp screen. A value
+    /// near 1.0 spreads the ramp over the entire panel instead: heavily frosted
+    /// at the far edge, fading continuously to sharp at the near edge, with the
+    /// whole ramp sliding as the lid moves.
+    ///
+    /// The reference animation does the latter - the blur strength varies
+    /// continuously across the panel rather than having a visible boundary - so
+    /// the ramp covers the full height.
+    static let softness: Double = 1.0
 
     /// `progress` 0 = no frosting, 1 = the whole screen frosted.
     /// `height` is the height to generate at - pass the view's pixel height so
@@ -100,14 +109,12 @@ enum FoldMask {
         return image
     }
 
-    /// Boundary position normalized to screen height (0 = bottom edge).
-    /// The edge highlight is placed here.
-    static func boundaryPosition(progress: Double, direction: SweepDirection) -> Double {
-        let p = min(max(progress, 0), 1)
-        let boundary = p * (1 + softness) - softness / 2
-        switch direction {
-        case .fromHinge: return boundary
-        case .fromTop:   return 1 - boundary
-        }
+    /// The same mask as a `CGImage`, for use as a `CALayer` mask on plain views
+    /// (`maskImage` only exists on `NSVisualEffectView`).
+    static func cgImage(progress: Double, direction: SweepDirection, height: Int) -> CGImage? {
+        let nsImage = image(progress: progress, direction: direction, height: height)
+        guard let rep = nsImage.representations.first as? NSBitmapImageRep else { return nil }
+        return rep.cgImage
     }
+
 }

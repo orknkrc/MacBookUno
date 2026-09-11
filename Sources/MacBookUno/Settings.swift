@@ -20,7 +20,7 @@ struct Settings {
         defaults.register(defaults: [
             Key.enabled: true,
             Key.threshold: Settings.defaultThreshold,
-            Key.sweepDirection: SweepDirection.fromHinge.rawValue,
+            Key.sweepDirection: SweepDirection.fromTop.rawValue,
         ])
     }
 
@@ -41,7 +41,7 @@ struct Settings {
     var sweepDirection: SweepDirection {
         get {
             guard let raw = defaults.string(forKey: Key.sweepDirection),
-                  let value = SweepDirection(rawValue: raw) else { return .fromHinge }
+                  let value = SweepDirection(rawValue: raw) else { return .fromTop }
             return value
         }
         nonmutating set { defaults.set(newValue.rawValue, forKey: Key.sweepDirection) }

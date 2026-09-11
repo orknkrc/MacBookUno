@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The blur is now a ramp spanning the whole panel instead of a bounded frosted
+  region with a soft edge. Watching the reference animation showed the blur
+  strength varies continuously across the surface — heaviest where it turns away
+  from the viewer, fading to sharp where it still faces them.
+- Heavier frost: a second `.withinWindow` effect view blurs the first pass's
+  output, and a faint light wash sits over the ramp. `NSVisualEffectView` has no
+  public blur-radius control, and a single pass left large shapes readable.
+- Default sweep direction is now `fromTop`. On a closing lid the top edge is the
+  part turning away from the viewer, which matches the reference.
+- The overlay pins itself to the dark appearance, so the effect looks identical
+  regardless of the user's system theme.
+
+### Added
+
+- `--appearance light|dark` debug flag for comparing the effect against either
+  theme without changing the system setting.
+
+### Removed
+
+- The edge highlight. The reference shows no bright line, and a full-panel ramp
+  has no edge to highlight.
+
 ## [0.1.0] - 2026-09-11
 
 First working release.

@@ -18,6 +18,7 @@ app.setActivationPolicy(.accessory)
 //   --log                 print angle and fold amount to stdout
 //   --pattern             lay a striped test pattern under the overlay
 //   --version             print the version and exit
+//   --appearance <light|dark>  force the app appearance for comparison
 let delegate = AppDelegate()
 var arguments = CommandLine.arguments
 if let index = arguments.firstIndex(of: "--simulate"), index + 1 < arguments.count,
@@ -32,6 +33,13 @@ if arguments.contains("--log") {
 }
 if arguments.contains("--pattern") {
     delegate.patternEnabled = true
+}
+// --appearance light|dark forces the APP's appearance, for checking how the
+// effect reads against each theme without touching the user's system setting.
+// The overlay window pins itself to dark regardless; this flag changes the
+// desktop-facing side of the comparison only.
+if let index = arguments.firstIndex(of: "--appearance"), index + 1 < arguments.count {
+    app.appearance = NSAppearance(named: arguments[index + 1] == "light" ? .aqua : .darkAqua)
 }
 app.delegate = delegate
 app.run()
