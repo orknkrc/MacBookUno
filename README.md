@@ -264,3 +264,7 @@ Scripts/make-app.sh             Builds MacBookUno.app
 
 `LidAngleKit` never imports AppKit and knows nothing about displays, so it can
 be reused on its own.
+
+## License
+
+[MIT](LICENSE) © Orkun Karaca
