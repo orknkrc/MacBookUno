@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+
+# Cancel an in-flight run when the same branch is pushed again.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build, test and package
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: |
+          swift --version
+          xcodebuild -version
+
+      - name: Build
+        run: swift build -c release
+
+      # The tests cover the descriptor parser and the smoother, both of which
+      # are pure code. They use a recorded descriptor from real hardware, so no
+      # lid angle sensor is needed and they run on any macOS runner.
+      - name: Test
+        run: swift test
+
+      - name: Package
+        run: ./Scripts/make-app.sh
+
+      - name: Check the bundle is not sandboxed
+        # App Sandbox blocks IOKit HID access, so the bundle must ship without
+        # entitlements. A stray entitlements file would break the app silently.
+        run: |
+          if codesign -d --entitlements - build/MacBookUno.app 2>&1 | grep -q "app-sandbox"; then
+            echo "::error::the bundle declares com.apple.security.app-sandbox"
+            exit 1
+          fi
+          echo "no sandbox entitlement, as expected"
+
+      - name: Upload the app
+        uses: actions/upload-artifact@v4
+        with:
+          name: MacBookUno.app
+          path: build/MacBookUno.app
+          retention-days: 7

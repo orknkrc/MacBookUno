@@ -9,6 +9,7 @@ Inspired by the iPhone Duo's folding animation — where the moving flap behaves
 like frosted glass laid over a screen that is already there — adapted to a
 laptop's single-panel display.
 
+[![CI](https://github.com/orknkrc/MacBookUno/actions/workflows/ci.yml/badge.svg)](https://github.com/orknkrc/MacBookUno/actions/workflows/ci.yml)
 ![Platform](https://img.shields.io/badge/platform-macOS%2013%2B-lightgrey)
 ![Swift](https://img.shields.io/badge/swift-5.9-orange)
 ![Dependencies](https://img.shields.io/badge/dependencies-none-brightgreen)

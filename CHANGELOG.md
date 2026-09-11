@@ -39,6 +39,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Unit tests for the descriptor parser and the angle smoother. They run against
+  a report descriptor recorded from real hardware, so no sensor is needed.
+- GitHub Actions CI: builds, tests, packages the app and fails if the bundle
+  ever picks up a sandbox entitlement.
 - `--appearance light|dark` debug flag for comparing the effect against either
   theme without changing the system setting.
 
