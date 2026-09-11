@@ -125,6 +125,10 @@ func candidateTable(_ bytes: [UInt8]) -> String {
     return lines.joined(separator: "\n")
 }
 
+/// One formatter reused for every line: `emit` runs up to 30 times a second and
+/// DateFormatter instances are expensive to create.
+let isoFormatter = ISO8601DateFormatter()
+
 var lastPrint = Date.distantPast
 let printInterval = 1.0 / options.hz
 
@@ -148,7 +152,7 @@ func emit(_ reading: LidAngleReading) {
         print(String(format: "\r  angle: %6.2f°  |%-40@|", reading.angle, bar as NSString), terminator: "")
         fflush(stdout)
     } else {
-        print(String(format: "%@  %7.2f", ISO8601DateFormatter().string(from: reading.timestamp), reading.angle))
+        print(String(format: "%@  %7.2f", isoFormatter.string(from: reading.timestamp), reading.angle))
     }
 }
 
