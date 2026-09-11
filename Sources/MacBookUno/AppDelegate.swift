@@ -240,7 +240,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         alert.runModal()
     }
 
-    // MARK: - Eylemler
+    // MARK: - Actions
 
     @objc private func toggleEnabled() {
         settings.isEnabled.toggle()

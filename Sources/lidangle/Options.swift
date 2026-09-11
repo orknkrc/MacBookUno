@@ -7,7 +7,7 @@ struct Options {
         case descriptor  // parse and print the report descriptor
         case probe       // try each read path once and report what works
         case stream      // listen to the input report stream
-        case poll        // 30 Hz GetReport ile yokla
+        case poll        // poll at 30 Hz via GetReport
         case auto        // stream first, fall back to polling if no data arrives
         case help
     }

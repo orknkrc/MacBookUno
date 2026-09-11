@@ -204,7 +204,7 @@ public struct HIDReportDescriptor: Sendable {
         return Int(v)
     }
 
-    /// 4 bitlik nibble: 0...7 pozitif, 8...15 ise -8...-1.
+    /// 4-bit nibble: 0...7 are positive, 8...15 map to -8...-1.
     private static func decodeUnitExponent(_ raw: UInt64) -> Int {
         let nibble = Int(raw & 0x0F)
         return nibble > 7 ? nibble - 16 : nibble
