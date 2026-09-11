@@ -163,6 +163,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
               let direction = SweepDirection(rawValue: raw) else { return }
         settings.sweepDirection = direction
         updateDirectionTitle()
+        controller.wake()
     }
 
     private func updateDirectionTitle() {
@@ -211,13 +212,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func logIfNeeded(raw: Double?, smoothed: Double?, intensity: Double) {
         guard logEnabled else { return }
         let now = ProcessInfo.processInfo.systemUptime
-        guard now - lastLog >= 0.2 else { return }
+        guard now - lastLog >= 0.05 else { return }
         lastLog = now
         let rawText = raw.map { String(format: "%7.2f", $0) } ?? "      -"
         let smoothText = smoothed.map { String(format: "%7.2f", $0) } ?? "      -"
-        print(String(format: "raw %@°  smoothed %@°  fold %%%3.0f  threshold %.0f°  direction %@",
-                     rawText, smoothText, intensity * 100,
-                     settings.threshold, settings.sweepDirection.rawValue))
+        print(String(format: "%8.3f  raw %@°  smoothed %@°  fold %%%3.0f  via %@",
+                     now, rawText, smoothText, intensity * 100, monitor.cadence.rawValue))
         fflush(stdout)
     }
 
@@ -227,7 +227,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             statusLine.title = "Status: stopped"
         case .running:
             let field = monitor.fieldDescription ?? "-"
-            statusLine.title = "Status: reading — \(field)"
+            let source = monitor.cadence.rawValue
+            statusLine.title = "Status: reading via \(source) — \(field)"
         case .degraded(let reason):
             statusLine.title = "Status: problem — \(reason)"
         }
@@ -250,20 +251,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func toggleEnabled() {
         settings.isEnabled.toggle()
         enableItem.state = settings.isEnabled ? .on : .off
+        // The frame loop idles when nothing moves, so every settings change has
+        // to wake it or the effect would not update until the lid next moves.
+        controller.wake()
     }
 
     @objc private func selectThreshold(_ sender: NSMenuItem) {
         guard let value = sender.representedObject as? Double else { return }
         settings.threshold = value
         updateThresholdTitle()
+        controller.wake()
     }
 
     @objc private func screensChanged() {
         controller.rebuildOverlay()
+        controller.wake()
     }
 
     @objc private func didWake() {
-        controller.resetSmoothing()
+        controller.resetSmoothing()   // also wakes the frame loop
         monitor.reconnect()
         controller.rebuildOverlay()
     }

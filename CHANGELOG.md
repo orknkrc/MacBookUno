@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Performance
+
+- The app is now idle while the lid is still. Measured CPU with the lid open and
+  the effect invisible dropped from **1.2% to 0.2%**.
+  - The 60 Hz frame loop stops once nothing is changing and is woken by lid
+    motion, a settings change, a screen change, or waking from sleep.
+  - The sensor is sampled a few times a second while the lid is still and at the
+    full rate while it moves, switching on a 0.15 degree motion deadband. The
+    deadband is needed because the centidegree field jitters by a few hundredths
+    of a degree even when the lid is held still.
+- Event-driven input reports were tried first and rejected on measurement: this
+  sensor does not publish a report when the angle changes. Opening the lid by
+  12 degrees produced no report for 2.6 seconds, which would freeze the effect
+  exactly when it matters. `LidAngleSensor.startStreaming` is kept for
+  `lidangle --stream` and for models where streaming may behave differently.
+
 ### Changed
 
 - The blur is now a ramp spanning the whole panel instead of a bounded frosted

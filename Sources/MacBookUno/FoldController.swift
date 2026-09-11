@@ -15,6 +15,13 @@ final class FoldController {
     private var frameTimer: Timer?
     private var lastIngested: Double?
 
+    /// How long everything must stay settled before the frame loop stops.
+    private static let idleDelay: TimeInterval = 0.5
+    /// Below this gap the smoothed value has caught up with the target.
+    private static let settledEpsilon = 0.02
+
+    private var lastMotionTime: TimeInterval = 0
+
     let settings: Settings
 
     /// For updating the UI (menu): (raw angle, smoothed angle, progress)
@@ -48,6 +55,20 @@ final class FoldController {
 
     func start() {
         rebuildOverlay()
+        // The monitor tells us when the lid actually moves, so nothing here has
+        // to poll for it.
+        monitor.onMotion = { [weak self] _ in self?.wake() }
+        wake()
+    }
+
+    /// Starts the frame loop, or keeps it alive if it is already running.
+    ///
+    /// Call this whenever something that affects the effect changes: lid motion,
+    /// a settings change, a screen change, waking from sleep. Missing a call
+    /// means the effect silently stops updating, so it is wired defensively.
+    func wake() {
+        lastMotionTime = ProcessInfo.processInfo.systemUptime
+        guard frameTimer == nil else { return }
         // .common mode: keep frames flowing even while a menu is open.
         let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
             self?.tick()
@@ -57,6 +78,7 @@ final class FoldController {
     }
 
     func stop() {
+        monitor.onMotion = nil
         frameTimer?.invalidate()
         frameTimer = nil
         overlay?.hideOverlay()
@@ -81,6 +103,7 @@ final class FoldController {
     func resetSmoothing() {
         smoother.reset()
         lastIngested = nil
+        wake()
     }
 
     // MARK: - Frame loop
@@ -111,6 +134,22 @@ final class FoldController {
         currentProgress = progress
         overlay?.apply(progress: progress, direction: settings.sweepDirection)
         onUpdate?(raw, smoothed, progress)
+
+        // Stop the loop once nothing is changing. Recomputing an identical mask
+        // 60 times a second keeps the CPU out of its deep idle states for no
+        // visible benefit; `wake()` brings it straight back.
+        if shouldIdle(now: now, raw: raw, smoothed: smoothed) {
+            frameTimer?.invalidate()
+            frameTimer = nil
+        }
+    }
+
+    private func shouldIdle(now: TimeInterval, raw: Double?, smoothed: Double?) -> Bool {
+        // The sweep drives the angle itself, so it must never be put to sleep.
+        guard sweepRange == nil else { return false }
+        guard now - lastMotionTime >= FoldController.idleDelay else { return false }
+        guard let raw, let smoothed else { return true }
+        return abs(raw - smoothed) < FoldController.settledEpsilon
     }
 
     private func resolveAngle(now: TimeInterval) -> Double? {
