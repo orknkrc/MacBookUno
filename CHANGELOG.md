@@ -26,10 +26,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `--appearance light|dark` debug flag for comparing the effect against either
   theme without changing the system setting.
 
-### Removed
+### Fixed
 
-- The edge highlight. The reference shows no bright line, and a full-panel ramp
-  has no edge to highlight.
+- `lidangle` no longer traps on extreme `--bit-size` values. Computing the
+  logical range in `Int` arithmetic overflowed for unsigned 63-bit and signed
+  64-bit fields; both are now handled explicitly, and sizes outside 1...64 are
+  rejected with a clear message.
+- The dummy buffer handed to IOKit when clearing the input report callback is
+  now per sensor instead of a shared static. A mutable global is not
+  concurrency-safe and is an error under the Swift 6 language mode.
+- `LidAngleMonitor` cancels its poll timer in `deinit`, so dropping a monitor
+  without calling `stop()` no longer leaves the timer running.
+
+### Changed
+
+- The menu shows the selected sweep direction in its title, matching how the
+  threshold angle is already displayed.
+- `lidangle` reuses a single `ISO8601DateFormatter` rather than allocating one
+  per reading.
 
 ## [0.1.0] - 2026-09-11
 
