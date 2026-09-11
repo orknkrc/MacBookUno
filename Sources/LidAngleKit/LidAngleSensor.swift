@@ -97,8 +97,13 @@ public final class LidAngleSensor {
     /// from outside via `--report-id/--bit-offset`.
     public private(set) var angleField: HIDReportField
 
-    /// Dummy buffer handed to IOKit when removing the callback (allocated once).
-    private static let nullBuffer = UnsafeMutablePointer<UInt8>.allocate(capacity: 1)
+    /// Dummy buffer handed to IOKit when removing the input report callback.
+    ///
+    /// Per instance rather than static: a shared mutable global is not
+    /// concurrency-safe (an error under the Swift 6 language mode), and one byte
+    /// per sensor costs nothing. Freed in `deinit`, after `stopStreaming()`.
+
+    private let nullBuffer = UnsafeMutablePointer<UInt8>.allocate(capacity: 1)
 
     private var isOpen = false
     private var inputBuffer: UnsafeMutablePointer<UInt8>?
@@ -224,6 +229,9 @@ public final class LidAngleSensor {
     deinit {
         stopStreaming()
         if isOpen { IOHIDDeviceClose(device, IOOptionBits(kIOHIDOptionsTypeNone)) }
+        // After stopStreaming(), so the buffer is still valid while IOKit is
+        // handed it to clear the callback.
+        nullBuffer.deallocate()
     }
 
     // MARK: - Synchronous reads (polling)
@@ -286,7 +294,7 @@ public final class LidAngleSensor {
         if let runLoop = scheduledRunLoop {
             // Removing the callback also requires a valid buffer; we use the
             // persistent one-byte buffer so each stop does not leak.
-            IOHIDDeviceRegisterInputReportCallback(device, LidAngleSensor.nullBuffer, 1, nil, nil)
+            IOHIDDeviceRegisterInputReportCallback(device, nullBuffer, 1, nil, nil)
             IOHIDDeviceUnscheduleFromRunLoop(device, runLoop, CFRunLoopMode.defaultMode.rawValue)
             scheduledRunLoop = nil
         }
