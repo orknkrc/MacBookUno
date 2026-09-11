@@ -18,5 +18,6 @@ let package = Package(
         .target(name: "LidAngleKit"),
         .executableTarget(name: "lidangle", dependencies: ["LidAngleKit"]),
         .executableTarget(name: "MacBookUno", dependencies: ["LidAngleKit"]),
+        .testTarget(name: "LidAngleKitTests", dependencies: ["LidAngleKit"]),
     ]
 )
