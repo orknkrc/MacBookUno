@@ -119,6 +119,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         statusItem.menu = menu
         updateThresholdTitle()
+        updateDirectionTitle()
     }
 
     private func buildThresholdMenu() -> NSMenu {
@@ -161,11 +162,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard let raw = sender.representedObject as? String,
               let direction = SweepDirection(rawValue: raw) else { return }
         settings.sweepDirection = direction
-        if let submenu = directionItem.submenu {
-            for item in submenu.items {
-                guard let itemRaw = item.representedObject as? String else { continue }
-                item.state = itemRaw == raw ? .on : .off
-            }
+        updateDirectionTitle()
+    }
+
+    private func updateDirectionTitle() {
+        directionItem.title = "Sweep Direction: \(settings.sweepDirection.localizedName)"
+        guard let submenu = directionItem.submenu else { return }
+        for item in submenu.items {
+            guard let raw = item.representedObject as? String else { continue }
+            item.state = raw == settings.sweepDirection.rawValue ? .on : .off
         }
     }
 
