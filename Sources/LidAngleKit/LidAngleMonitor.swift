@@ -72,6 +72,17 @@ public final class LidAngleMonitor {
         timer.resume()
     }
 
+    /// Cancels the poll timer if the monitor is dropped without `stop()`.
+    ///
+    /// Deliberately not calling `stop()`: that uses `queue.sync`, and by the time
+    /// deinit runs no in-flight tick can hold a reference (the timer captures
+    /// `self` weakly), so cancelling and closing directly is both safe and
+    /// avoids synchronising onto a queue during deallocation.
+    deinit {
+        timer?.cancel()
+        sensor?.close()
+    }
+
     public func stop() {
         timer?.cancel()
         timer = nil
