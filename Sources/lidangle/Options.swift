@@ -39,11 +39,26 @@ struct Options {
     /// If all three are supplied, this field is used instead of the parsed one.
     var overrideField: HIDReportField? {
         guard let reportID, let bitOffset, let bitSize else { return nil }
+
+        // The logical range is computed in Int arithmetic, so the widest sizes
+        // have to be special-cased or they trap: unsigned 63 bits evaluates
+        // `(1 << 63) - 1`, which is `Int.min - 1`, and signed 64 bits evaluates
+        // `-(1 << 63)`, which is `-Int.min`. Both are overflows, not wrap-around.
+        let logicalMin: Int
+        let logicalMax: Int
+        if signedField {
+            logicalMin = bitSize >= 64 ? Int.min : -(1 << (bitSize - 1))
+            logicalMax = bitSize >= 64 ? Int.max : (1 << (bitSize - 1)) - 1
+        } else {
+            logicalMin = 0
+            logicalMax = bitSize >= 63 ? Int.max : (1 << bitSize) - 1
+        }
+
         return HIDReportField(reportID: reportID, kind: .input,
                               usagePage: 0, usage: 0,
                               bitOffset: bitOffset, bitSize: bitSize,
-                              logicalMin: signedField ? -(1 << (bitSize - 1)) : 0,
-                              logicalMax: signedField ? (1 << (bitSize - 1)) - 1 : (1 << bitSize) - 1,
+                              logicalMin: logicalMin,
+                              logicalMax: logicalMax,
                               unitExponent: exponent,
                               isConstant: false)
     }
@@ -98,7 +113,13 @@ struct Options {
             case "--any":              options.vendorID = nil; options.productID = nil
             case "--report-id":        options.reportID = UInt8(truncatingIfNeeded: intValue("--report-id"))
             case "--bit-offset":       options.bitOffset = intValue("--bit-offset")
-            case "--bit-size":         options.bitSize = intValue("--bit-size")
+            case "--bit-size":
+                let bits = intValue("--bit-size")
+                guard (1...64).contains(bits) else {
+                    FileHandle.standardError.write("Error: --bit-size must be between 1 and 64 (got \(bits))\n".data(using: .utf8)!)
+                    exit(2)
+                }
+                options.bitSize = bits
             case "--exponent":         options.exponent = intValue("--exponent")
             case "--signed":           options.signedField = true
             case "--fine":             options.preference = .bestResolution
