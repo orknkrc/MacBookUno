@@ -110,6 +110,7 @@ public final class LidAngleSensor {
     private var inputBufferSize: Int = 0
     private var streamHandler: ((LidAngleReading) -> Void)?
     private var scheduledRunLoop: CFRunLoop?
+    private var scheduledMode: CFRunLoopMode = .commonModes
 
     // MARK: - Discovery
 
@@ -265,7 +266,10 @@ public final class LidAngleSensor {
     // MARK: - Streaming (input report callback)
 
     /// `handler` is called as the device publishes reports, on the given run loop.
+    /// - Parameter mode: the run loop mode to schedule in. `.commonModes` keeps
+    ///   reports flowing while a menu is tracking; `.defaultMode` does not.
     public func startStreaming(on runLoop: CFRunLoop = CFRunLoopGetCurrent(),
+                               mode: CFRunLoopMode = .commonModes,
                                handler: @escaping (LidAngleReading) -> Void) throws {
         guard isOpen else { throw LidAngleError.notOpen }
         stopStreaming()
@@ -286,8 +290,9 @@ public final class LidAngleSensor {
             sensor.handleInputReport(bytes: bytes, reportID: UInt8(truncatingIfNeeded: reportID), reportLength: length)
         }, context)
 
-        IOHIDDeviceScheduleWithRunLoop(device, runLoop, CFRunLoopMode.defaultMode.rawValue)
+        IOHIDDeviceScheduleWithRunLoop(device, runLoop, mode.rawValue)
         scheduledRunLoop = runLoop
+        scheduledMode = mode
     }
 
     public func stopStreaming() {
@@ -295,7 +300,7 @@ public final class LidAngleSensor {
             // Removing the callback also requires a valid buffer; we use the
             // persistent one-byte buffer so each stop does not leak.
             IOHIDDeviceRegisterInputReportCallback(device, nullBuffer, 1, nil, nil)
-            IOHIDDeviceUnscheduleFromRunLoop(device, runLoop, CFRunLoopMode.defaultMode.rawValue)
+            IOHIDDeviceUnscheduleFromRunLoop(device, runLoop, scheduledMode.rawValue)
             scheduledRunLoop = nil
         }
         streamHandler = nil
