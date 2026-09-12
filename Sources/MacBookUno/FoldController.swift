@@ -84,15 +84,22 @@ final class FoldController {
         monitor.onMotion = nil
         frameTimer?.invalidate()
         frameTimer = nil
-        overlay?.hideOverlay()
+        overlay?.teardown()
         overlay?.close()
         overlay = nil
     }
 
     func rebuildOverlay() {
         guard let screen = FoldController.internalScreen else {
-            // No internal display (clamshell with an external monitor, or a desktop Mac).
-            overlay?.hideOverlay()
+            // No internal display: clamshell with an external monitor, or a
+            // desktop Mac. The window is torn down and forgotten, not merely
+            // hidden - a hidden one was still reachable, and the very next tick
+            // handed it a fold of 1 and ordered it front again, which put the
+            // effect on the external display at the internal screen's stale
+            // coordinates. The lid angle has nothing to do with that monitor.
+            overlay?.teardown()
+            overlay?.close()
+            overlay = nil
             return
         }
         if let overlay {

@@ -101,4 +101,19 @@ final class FoldOverlayWindow: NSWindow {
     func hideOverlay() {
         if isVisible { orderOut(nil) }
     }
+
+    /// Shuts the overlay down for good: the renderer first, then the window.
+    ///
+    /// Hiding alone is not enough. A style can hold a resource - the Fold Plane
+    /// holds a screen capture - and only learns the effect is over when it is
+    /// handed a zero or uninstalled. Ordering the window out leaves it running.
+    func teardown() {
+        renderer?.apply(progress: 0, direction: .fromTop,
+                        bounds: container.bounds,
+                        scale: backingScaleFactor > 0 ? backingScaleFactor : 2)
+        renderer?.uninstall()
+        renderer = nil
+        installedStyle = nil
+        if isVisible { orderOut(nil) }
+    }
 }

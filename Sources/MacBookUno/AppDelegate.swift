@@ -239,6 +239,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// The preview: a slider that feeds the controller a pretend angle.
     /// Puts the slider and its escape hatch straight into a menu.
     private func addPreviewItems(to menu: NSMenu) {
+        previewView.captionForValue = { AppDelegate.previewCaption(for: $0) }
         previewView.onChange = { [weak self] angle in
             guard let self else { return }
             self.previewFromSlider = true
@@ -318,11 +319,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         controller.wake()
     }
 
+    private static func previewCaption(for angle: Double) -> String {
+        String(format: "Previewing %.0f°", angle)
+    }
+
     /// `nil` parks the knob at the top and says there is nothing to escape.
     private func showPreview(angle: Double?) {
         if let angle {
-            previewView.show(value: angle,
-                             caption: String(format: "Previewing %.0f°", angle))
+            previewView.show(value: angle, caption: AppDelegate.previewCaption(for: angle))
         } else {
             previewView.show(value: AppDelegate.previewMaxAngle,
                              caption: "Drag to preview")

@@ -119,7 +119,14 @@ final class PlaneFoldStyle: FoldStyleRenderer {
         // would undo the idle work for an effect nobody is looking at.
         if progress > 0.001 {
             startFeedIfNeeded()
-        } else if feed.isRunning {
+        } else {
+            // Unconditionally, not `else if feed.isRunning`. That guard reads as
+            // an optimisation and is a leak: `isRunning` only turns true once the
+            // asynchronous set-up finishes, so a fold that starts and reverses
+            // inside that window skipped the stop entirely, the set-up then
+            // adopted the stream, and it captured for the rest of the session.
+            // `stop()` already handles both cases - it records the request when
+            // a start is in flight, and does nothing at all when idle.
             feed.stop()
             hasFrame = false
             plane.contents = nil

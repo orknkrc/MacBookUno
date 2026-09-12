@@ -191,7 +191,7 @@ sharper.*
 
 ## Lifecycle
 
-Two bugs lived in the capture's lifecycle, both invisible on screen:
+Three bugs lived in the capture's lifecycle, all invisible on screen:
 
 - `FoldOverlayWindow.apply` returned before reaching the renderer once the fold
   hit zero, so the plane was never told the effect was over and **kept capturing
@@ -201,6 +201,14 @@ Two bugs lived in the capture's lifecycle, both invisible on screen:
   fresh `SCStream` on every frame until the first one came up — **five live
   captures for one fold, four of them orphaned**: never stopped, and still
   delivering frames into the same handler.
+- The stop itself was guarded on `feed.isRunning`, which has the same problem
+  from the other side: a fold that started and reversed before the set-up
+  finished skipped the stop, and the stream was adopted afterwards and never
+  released. The first fix above made the stop reachable; this one made it
+  unconditional.
+
+Measured after all three, driving the fold through the threshold repeatedly:
+one stream created and stopped per cycle, alternating cleanly.
 
 Cost, once both were fixed: about **3.5% CPU** while the plane is on screen,
 against 0.2% idle. It only runs below the threshold angle.

@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- The screen capture no longer outlives a fold that reverses quickly. The stop
+  was guarded on `feed.isRunning`, which only turns true once the asynchronous
+  set-up finishes, so a fold that started and reversed inside that window
+  skipped the stop entirely; the set-up then adopted the stream and it captured
+  for the rest of the session. `stop()` already handled both cases, so the guard
+  was removed. This is the same defect as the one fixed in 0.4.0, in a second
+  place that was missed.
+- The effect no longer reappears on an external display in clamshell mode. With
+  no internal display the overlay was hidden but kept, and the very next frame
+  handed it a fold of 1 and ordered it front again, at the internal screen's
+  stale coordinates. It is now torn down and forgotten, which also stops the
+  capture that hiding alone left running.
+- Waking from sleep no longer flashes a full fold. `reconnect()` cleared the
+  notification marker but not the last angle, so the first frame after waking
+  was driven by the few-degree reading left behind when the lid shut. Verified
+  on hardware: the angle now reads nil between the reconnect and the first fresh
+  sample, rather than 132.03 degrees.
+- The preview slider's caption keeps up with the knob. It only updated when the
+  menu was reopened, so the label read "Drag to preview" throughout a drag. The
+  caption cannot simply be refreshed from the change handler - that writes the
+  slider's value back and snaps the knob to whole degrees under the hand
+  dragging it - so the view formats it directly.
+
+Found by an external audit of the whole repository.
+
 ## [0.4.0] - 2026-09-12
 
 ### Added

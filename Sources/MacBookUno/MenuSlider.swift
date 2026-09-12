@@ -12,6 +12,12 @@ final class MenuSliderView: NSView {
 
     /// Fires on every movement of the knob, in whole degrees.
     var onChange: ((Double) -> Void)?
+    /// Builds the caption for a value, so the label keeps up with the knob.
+    ///
+    /// The caller cannot do this from `onChange` by calling `show(value:caption:)`:
+    /// that also writes the slider's own value back, which snaps the knob to
+    /// whole degrees under the hand that is dragging it.
+    var captionForValue: ((Double) -> String)?
 
     private let slider = NSSlider()
     private let caption = NSTextField(labelWithString: "")
@@ -50,6 +56,8 @@ final class MenuSliderView: NSView {
     @objc private func moved() {
         // Whole degrees: the sensor resolves hundredths, but a threshold or a
         // preview angle finer than a degree is not a distinction anyone makes.
-        onChange?(slider.doubleValue.rounded())
+        let value = slider.doubleValue.rounded()
+        if let captionForValue { caption.stringValue = captionForValue(value) }
+        onChange?(value)
     }
 }

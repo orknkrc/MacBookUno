@@ -135,7 +135,17 @@ public final class LidAngleMonitor {
             guard let self else { return }
             self.sensor?.close()
             self.sensor = nil
-            self.lastNotifiedAngle = nil   // force a notification after reconnecting
+            // The last angle goes too, not just the notification marker.
+            //
+            // Sleep is entered with the lid shut, so the reading left behind is
+            // whatever it was at a few degrees. Keeping it means the first frame
+            // after waking is driven by that stale value - a full fold flashed
+            // across the screen before the first fresh sample arrived. A caller
+            // that reads nil simply shows nothing until the sensor answers.
+            self.withLock {
+                self._latestAngle = nil
+                self.lastNotifiedAngle = nil   // force a notification after reconnecting
+            }
             try? self.connectLocked()
             self.setCadence(.active)
         }
