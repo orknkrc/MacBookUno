@@ -31,6 +31,15 @@ if arguments.contains("--sweep") {
 if arguments.contains("--log") {
     delegate.logEnabled = true
 }
+// --capture-test <path>: grab one frame, write it out, exit. Verifies the
+// Screen Recording permission and the capture path without running the effect.
+if let index = arguments.firstIndex(of: "--capture-test"), index + 1 < arguments.count {
+    delegate.captureTestPath = arguments[index + 1]
+}
+if let index = arguments.firstIndex(of: "--style"), index + 1 < arguments.count,
+   let style = FoldStyle(rawValue: arguments[index + 1]) {
+    Settings().foldStyle = style
+}
 if arguments.contains("--pattern") {
     delegate.patternEnabled = true
 }

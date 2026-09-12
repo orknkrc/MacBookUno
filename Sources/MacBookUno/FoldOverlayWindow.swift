@@ -20,6 +20,10 @@ final class FoldOverlayWindow: NSWindow {
     private var renderer: FoldStyleRenderer?
     private var installedStyle: FoldStyle?
 
+    /// Forwarded from whichever style is installed, so a style that cannot run
+    /// says so instead of quietly drawing nothing.
+    var onStyleUnavailable: ((String) -> Void)?
+
     init(screen: NSScreen) {
         super.init(contentRect: screen.frame,
                    styleMask: .borderless,
@@ -81,6 +85,7 @@ final class FoldOverlayWindow: NSWindow {
         guard installedStyle != style else { return }
         renderer?.uninstall()
         let renderer = style.makeRenderer()
+        renderer.onUnavailable = { [weak self] message in self?.onStyleUnavailable?(message) }
         renderer.install(in: container)
         self.renderer = renderer
         installedStyle = style

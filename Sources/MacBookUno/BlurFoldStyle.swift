@@ -24,6 +24,9 @@ final class BlurFoldStyle: FoldStyleRenderer {
 
     private let mask = FoldMaskCache()
 
+    /// Never called: this style needs nothing it might not get.
+    var onUnavailable: ((String) -> Void)?
+
     func install(in container: NSView) {
         for effect in [effectView, secondPass] {
             effect.frame = container.bounds

@@ -2,24 +2,30 @@ import AppKit
 
 /// The visual treatment applied as the lid folds.
 enum FoldStyle: String, CaseIterable {
-    /// A frosted ramp spanning the whole panel.
+    /// A frosted ramp spanning the whole panel. Requires no permissions.
     case blur
+    /// The desktop held at its own angle while the panel turns around it.
+    /// Captures the screen, so it needs Screen Recording permission.
+    case plane
 
     var localizedName: String {
         switch self {
-        case .blur: return "Blur"
+        case .blur:  return "Blur"
+        case .plane: return "Fold Plane"
         }
     }
 
     var summary: String {
         switch self {
-        case .blur: return "Frost spread evenly across the panel."
+        case .blur:  return "Frost spread evenly across the panel. No permissions."
+        case .plane: return "The desktop keeps its angle as the lid turns. Needs Screen Recording."
         }
     }
 
     func makeRenderer() -> FoldStyleRenderer {
         switch self {
-        case .blur: return BlurFoldStyle()
+        case .blur:  return BlurFoldStyle()
+        case .plane: return PlaneFoldStyle()
         }
     }
 }
@@ -30,6 +36,11 @@ enum FoldStyle: String, CaseIterable {
 /// layers that produce the look, so a new style is a new file rather than
 /// another branch inside the window.
 protocol FoldStyleRenderer: AnyObject {
+    /// Called on the main queue when the style cannot run, with a message fit to
+    /// show a user. Styles that need no permissions never call it, but it is on
+    /// the protocol so a failing style can never fail silently.
+    var onUnavailable: ((String) -> Void)? { get set }
+
     /// Adds the style's views to the overlay's container.
     func install(in container: NSView)
     /// Removes them again when the style changes.

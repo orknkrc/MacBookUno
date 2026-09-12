@@ -27,6 +27,9 @@ final class FoldController {
     /// For updating the UI (menu): (raw angle, smoothed angle, progress)
     var onUpdate: ((Double?, Double?, Double) -> Void)?
 
+    /// Raised when the selected style cannot run, with a message for the user.
+    var onStyleUnavailable: ((String) -> Void)?
+
     private(set) var currentProgress: Double = 0
 
     /// For testing: use a fixed angle instead of the sensor.
@@ -95,7 +98,11 @@ final class FoldController {
         if let overlay {
             overlay.reposition(on: screen)
         } else {
-            overlay = FoldOverlayWindow(screen: screen)
+            let window = FoldOverlayWindow(screen: screen)
+            window.onStyleUnavailable = { [weak self] message in
+                self?.onStyleUnavailable?(message)
+            }
+            overlay = window
         }
     }
 
@@ -134,7 +141,7 @@ final class FoldController {
         currentProgress = progress
         overlay?.apply(progress: progress,
                        direction: settings.sweepDirection,
-                       style: .blur)
+                       style: settings.foldStyle)
         onUpdate?(raw, smoothed, progress)
 
         // Stop the loop once nothing is changing. Recomputing an identical mask

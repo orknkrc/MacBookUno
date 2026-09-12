@@ -15,6 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let enableItem = NSMenuItem(title: "Effect Enabled", action: #selector(toggleEnabled), keyEquivalent: "")
     private let thresholdItem = NSMenuItem(title: "Threshold Angle", action: nil, keyEquivalent: "")
     private let directionItem = NSMenuItem(title: "Sweep Direction", action: nil, keyEquivalent: "")
+    private let styleItem = NSMenuItem(title: "Animation Style", action: nil, keyEquivalent: "")
 
     /// Test flags handed over from main.swift.
     var simulatedAngle: Double?
@@ -23,8 +24,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var logEnabled = false
     /// --pattern: lay a striped test pattern under the overlay for measurement.
     var patternEnabled = false
+    /// --capture-test: write one captured frame to this path and exit.
+    var captureTestPath: String?
     private var patternWindow: PatternBackdropWindow?
     private var lastLog: TimeInterval = 0
+
+    /// Shown once per launch: repeating a modal on every frame would be unusable.
+    private var reportedStyleFailure = false
 
     private var menuIsOpen = false
     private var lastMenuRefresh: TimeInterval = 0
@@ -32,6 +38,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // MARK: - Startup
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        if let path = captureTestPath { runCaptureTest(writingTo: path); return }
         controller = FoldController(settings: settings, monitor: monitor)
         buildStatusItem()
 
@@ -50,6 +57,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             guard let self else { return }
             self.refreshMenuIfVisible(raw: raw, smoothed: smoothed, intensity: intensity)
             self.logIfNeeded(raw: raw, smoothed: smoothed, intensity: intensity)
+        }
+        controller.onStyleUnavailable = { [weak self] message in
+            self?.reportStyleUnavailable(message)
         }
         controller.simulatedAngle = simulatedAngle
         if sweepEnabled {
@@ -75,6 +85,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         controller?.stop()
         monitor.stop()
+    }
+
+    /// Verifies the capture path end to end, then exits.
+    private func runCaptureTest(writingTo path: String) {
+        Task {
+            do {
+                let image = try await ScreenCapture.captureInternalDisplay(excludingWindowNumber: nil)
+                let rep = NSBitmapImageRep(cgImage: image)
+                guard let data = rep.representation(using: .png, properties: [:]) else {
+                    print("could not encode the capture"); exit(1)
+                }
+                try data.write(to: URL(fileURLWithPath: path))
+                print("captured \(image.width)x\(image.height) to \(path)")
+                exit(0)
+            } catch {
+                print("capture failed: \(error)")
+                exit(1)
+            }
+        }
     }
 
     // MARK: - Menu bar
@@ -106,6 +135,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         thresholdItem.submenu = buildThresholdMenu()
         menu.addItem(thresholdItem)
 
+        styleItem.submenu = buildStyleMenu()
+        menu.addItem(styleItem)
+
         directionItem.submenu = buildDirectionMenu()
         menu.addItem(directionItem)
 
@@ -120,6 +152,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         statusItem.menu = menu
         updateThresholdTitle()
         updateDirectionTitle()
+        updateStyleTitle()
     }
 
     private func buildThresholdMenu() -> NSMenu {
@@ -138,6 +171,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         hint.isEnabled = false
         submenu.addItem(hint)
         return submenu
+    }
+
+    private func buildStyleMenu() -> NSMenu {
+        let submenu = NSMenu()
+        for style in FoldStyle.allCases {
+            let item = NSMenuItem(title: style.localizedName,
+                                  action: #selector(selectStyle(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = style.rawValue
+            item.toolTip = style.summary
+            submenu.addItem(item)
+        }
+        return submenu
+    }
+
+    @objc private func selectStyle(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String,
+              let style = FoldStyle(rawValue: raw) else { return }
+        settings.foldStyle = style
+        updateStyleTitle()
+        controller.wake()
+    }
+
+    private func updateStyleTitle() {
+        styleItem.title = "Animation Style: \(settings.foldStyle.localizedName)"
+        guard let submenu = styleItem.submenu else { return }
+        for item in submenu.items {
+            guard let raw = item.representedObject as? String else { continue }
+            item.state = raw == settings.foldStyle.rawValue ? .on : .off
+        }
     }
 
     private func buildDirectionMenu() -> NSMenu {
@@ -231,6 +294,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             statusLine.title = "Status: reading via \(source) — \(field)"
         case .degraded(let reason):
             statusLine.title = "Status: problem — \(reason)"
+        }
+    }
+
+    /// The selected style cannot run - almost always a missing Screen Recording
+    /// permission, which macOS grants per binary, so switching between a debug
+    /// build and the app bundle triggers it.
+    private func reportStyleUnavailable(_ message: String) {
+        statusLine.title = "Status: \(settings.foldStyle.localizedName) unavailable"
+        guard !reportedStyleFailure else { return }
+        reportedStyleFailure = true
+
+        NSApp.activate(ignoringOtherApps: true)
+        let alert = NSAlert()
+        alert.messageText = "\(settings.foldStyle.localizedName) cannot run"
+        alert.informativeText = message
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Open Settings")
+        alert.addButton(withTitle: "Use Blur Instead")
+        alert.addButton(withTitle: "Cancel")
+
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:
+            let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!
+            NSWorkspace.shared.open(url)
+        case .alertSecondButtonReturn:
+            settings.foldStyle = .blur
+            updateStyleTitle()
+            controller.wake()
+        default:
+            break
         }
     }
 

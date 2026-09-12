@@ -6,6 +6,7 @@ struct Settings {
         static let enabled = "effectEnabled"
         static let threshold = "thresholdAngle"
         static let sweepDirection = "sweepDirection"
+        static let foldStyle = "foldStyle"
     }
 
     /// Threshold angle choices. The measured range on this Mac is 0-132 degrees,
@@ -21,6 +22,7 @@ struct Settings {
             Key.enabled: true,
             Key.threshold: Settings.defaultThreshold,
             Key.sweepDirection: SweepDirection.fromTop.rawValue,
+            Key.foldStyle: FoldStyle.blur.rawValue,
         ])
     }
 
@@ -45,5 +47,15 @@ struct Settings {
             return value
         }
         nonmutating set { defaults.set(newValue.rawValue, forKey: Key.sweepDirection) }
+    }
+
+    /// Which visual treatment the fold uses.
+    var foldStyle: FoldStyle {
+        get {
+            guard let raw = defaults.string(forKey: Key.foldStyle),
+                  let value = FoldStyle(rawValue: raw) else { return .blur }
+            return value
+        }
+        nonmutating set { defaults.set(newValue.rawValue, forKey: Key.foldStyle) }
     }
 }
