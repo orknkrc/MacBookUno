@@ -62,7 +62,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var patternWindow: PatternBackdropWindow?
     private var lastLog: TimeInterval = 0
 
-    /// Shown once per launch: repeating a modal on every frame would be unusable.
+    /// Suppresses a repeat of the same modal while the style keeps failing.
+    ///
+    /// Cleared whenever the user does something that could change the outcome -
+    /// picking a style, switching the effect back on - because otherwise the
+    /// first failure silenced the alert for the rest of the session, including
+    /// the "Open Settings" button that was the way out of it.
     private var reportedStyleFailure = false
 
     /// Whether the sensor is usable, for the icon and the Sensor row.
@@ -207,7 +212,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func toggleLoginItem() {
-        let wanted = LoginItem.state != .on
+        // Only `off` asks to be switched on. `needsApproval` is already
+        // registered - just not allowed yet - so treating it as "not on" made
+        // the click call `register()` a second time, which fails, and left no
+        // way to turn the login item off at all.
+        let wanted = LoginItem.state == .off
         if let problem = LoginItem.set(wanted) {
             let alert = NSAlert()
             alert.messageText = "Open at Login"
@@ -377,6 +386,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard let raw = sender.representedObject as? String,
               let style = FoldStyle(rawValue: raw) else { return }
         settings.foldStyle = style
+        reportedStyleFailure = false
         updateStyleTitle()
         controller.wake()
     }
@@ -593,6 +603,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func toggleEnabled() {
         settings.isEnabled.toggle()
+        if settings.isEnabled { reportedStyleFailure = false }
         enableItem.state = settings.isEnabled ? .on : .off
         updateStatusIcon()
         // The frame loop idles when nothing moves, so every settings change has

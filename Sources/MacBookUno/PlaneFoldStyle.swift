@@ -53,6 +53,13 @@ final class PlaneFoldStyle: FoldStyleRenderer {
     /// Cached so the gradient is not rebuilt on every frame.
     private var maskImage: CIImage?
     private var maskReach: Double = .nan
+    /// The size the cached mask was built for.
+    ///
+    /// Caching on the fold alone is not enough: the panel's size can change
+    /// without the fold moving at all - a resolution change, or the window
+    /// following the display to a different one - and the stale mask is then
+    /// the wrong shape for the layer it is applied to.
+    private var maskSize: CGSize = .zero
     /// The void, cut to the shape of the plane.
     private let veil = CAShapeLayer()
     /// Holds the plane and carries the perspective.
@@ -103,6 +110,8 @@ final class PlaneFoldStyle: FoldStyleRenderer {
         feed.stop()
         hasFrame = false
         maskImage = nil
+        maskImage = nil
+        maskSize = .zero
         veil.path = nil
         veil.removeFromSuperlayer()
         stage.sublayerTransform = CATransform3DIdentity
@@ -346,8 +355,10 @@ final class PlaneFoldStyle: FoldStyleRenderer {
 
         let (lowFraction, highFraction) = PlaneFoldStyle.rampBounds(progress: p)
         let reach = 1.25 - p * 1.5
-        if maskImage == nil || abs(maskReach - reach) > 0.01 {
+        let size = CGSize(width: pixelWidth, height: pixelHeight)
+        if maskImage == nil || abs(maskReach - reach) > 0.01 || maskSize != size {
             maskReach = reach
+            maskSize = size
             let low = lowFraction * pixelHeight
             let high = highFraction * pixelHeight
             // Core Image's origin is bottom left, so "white at the top" means the

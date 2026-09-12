@@ -124,6 +124,16 @@ final class DisplayStream: NSObject, SCStreamOutput {
     /// `stop` arriving while the set-up is still in flight.
     private var stopRequested = false
 
+    /// How long to wait before trying again after a failed set-up.
+    ///
+    /// A failure leaves `starting` false and `isRunning` false, which is
+    /// indistinguishable from "not started" - so the frame loop, which asks
+    /// every frame, asked sixty times a second and spawned a `SCShareableContent`
+    /// query for each. Screen Recording being switched off is exactly the case
+    /// that fails, and the effect is a spin loop for as long as the lid is moving.
+    private static let retryDelay: TimeInterval = 3
+    private var retryNotBefore: TimeInterval = 0
+
     /// Called on the main queue when the feed cannot start, with a message fit
     /// to show a user. Screen Recording is granted per binary, so this fires
     /// routinely during development when switching between builds.
@@ -133,6 +143,7 @@ final class DisplayStream: NSObject, SCStreamOutput {
     func start(excludingWindowNumber excluded: Int?,
                onFrame: @escaping (IOSurfaceRef) -> Void) {
         guard stream == nil, !starting else { return }
+        guard ProcessInfo.processInfo.systemUptime >= retryNotBefore else { return }
         starting = true
         stopRequested = false
         self.onFrame = onFrame
@@ -194,7 +205,11 @@ final class DisplayStream: NSObject, SCStreamOutput {
     private func finishStarting(_ stream: SCStream?) {
         DispatchQueue.main.async {
             self.starting = false
-            guard let stream else { return }
+            guard let stream else {
+                self.retryNotBefore = ProcessInfo.processInfo.systemUptime
+                    + DisplayStream.retryDelay
+                return
+            }
             guard !self.stopRequested else {
                 Task { try? await stream.stopCapture() }
                 return
@@ -213,6 +228,9 @@ final class DisplayStream: NSObject, SCStreamOutput {
         // A stop can land before the set-up finishes; remember it so the stream
         // that arrives afterwards is dropped rather than left running.
         if starting { stopRequested = true }
+        // The next fold gets a fresh attempt rather than serving out a cooldown
+        // that was earned by the previous one.
+        retryNotBefore = 0
         guard let stream else { return }
         self.stream = nil
         isRunning = false

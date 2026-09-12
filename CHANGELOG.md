@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- A failed screen capture no longer retries sixty times a second. A failure left
+  the stream neither running nor starting, which is indistinguishable from "not
+  started", so the frame loop asked again on every frame and spawned an
+  `SCShareableContent` query each time. There is now a three second cooldown
+  after a failure, cleared when the fold ends so the next one gets a fresh try.
+- The alert explaining that a style cannot run is shown again after the user
+  picks a style or switches the effect back on. It was suppressed for the rest
+  of the session after the first time, which also took away the "Open Settings"
+  button that was the way out of it.
+- `Open at Login` can be switched off while macOS is still waiting for approval.
+  That state means the app *is* registered, but it was treated as "not on", so
+  the click tried to register a second time, failed, and left no way to turn the
+  item off.
+- The Fold Plane's blur mask is rebuilt when the panel changes size. It was
+  cached against the fold alone, so a resolution change - or the window
+  following the display to another one - at an unchanged angle reused a mask
+  built for the old dimensions.
+
+
 ## [0.4.1] - 2026-09-12
 
 ### Fixed
