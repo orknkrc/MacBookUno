@@ -7,6 +7,77 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Fold Plane style.** The desktop keeps its own angle on a `CATransform3D`
+  plane while the panel turns around it, which is how the reference animation
+  behaves. Chosen from the new Animation Style menu; Frosted Glass remains the
+  default and still asks for no permissions.
+  - The plane shows a live `ScreenCaptureKit` stream, measured at ~48 fps. A
+    single screenshot was tried first and is unusable: the effect begins while
+    the lid is still at a working angle, so a frozen frame leaves you looking at
+    a photograph of your desktop while clicks pass through to the real thing.
+  - Blur strength ramps across the plane via `CIMaskedVariableBlur`, matching
+    the ramp the Frosted Glass style already had.
+  - The plane's own outline is feathered through the same variable blur as its
+    contents, so an edge is exactly as soft as the picture beside it: the hinge
+    end stays crisp where nothing is blurred, and only the far end dissolves. A
+    uniform feather was tried first and rounds off the hinge corners, which are
+    the part of the panel still facing the viewer squarely. The hinge edge is excluded, since fading it
+    would leave a dark band across the bottom of the screen.
+  - The void is cut to the plane's outline rather than filled flat, so the dark
+    descends with the fold. Measured in ten bands, the top band goes 37.3 to
+    10.0 as the fold runs 0 to 50% while the bottom band stays within 3.5 of
+    untouched. A vertical gradient was tried first and leaves the side margins
+    transparent, where the real desktop beside the leaning copy of itself reads
+    as a double image. The hole stops where the plane's alpha actually
+    reaches 1, which now tapers with the feather: its bottom corners sit on the
+    plane's true corners and only the far ones are pulled in. Cut any wider and
+    a half-transparent band is left with no dark behind it, and the real screen
+    shows through it.
+  - If Screen Recording is unavailable the app says why and offers to open
+    System Settings or switch to Frosted Glass, rather than showing nothing.
+- `--style blur|plane` to pick a style for one run, and `--capture-test <path>`
+  to grab a single frame and exit, which separates a permission problem from a
+  rendering one.
+- `Scripts/make-app.sh` signs with a real code signing identity when one exists,
+  using `CODESIGN_IDENTITY` or the first identity it finds, and falls back to
+  ad-hoc with a warning. macOS keys the Screen Recording grant to the code
+  signature, and an ad-hoc signature changes on every rebuild.
+
+### Changed
+
+- Minimum macOS is now **14**, for `SCScreenshotManager`. The Frosted Glass
+  style alone would still run on macOS 13.
+
+### Notes
+
+Three things measured while building this, all of which shaped the design:
+
+- `CALayer.backgroundFilters` does nothing on a modern compositor. It would have
+  blurred the desktop directly with no capture and no permission; the filter is
+  retained and never applied.
+- `CALayer.mask` and `CALayer.filters` are mutually exclusive — a layer with
+  both silently drops the filter, whether the mask is on the layer or on an
+  ancestor. Hence Core Image for the variable blur.
+- AppKit pins a view-backed layer's `anchorPoint` to (0, 0), so a
+  `sublayerTransform` carrying perspective shears the plane into a parallelogram.
+  The perspective sits on a plain intermediate layer whose anchor is the middle,
+  which also stops the void being depth-sorted in front of the leaning plane.
+- `CALayer.filters` operate in the layer's bounds **in points**, not in pixels
+  and not at the size of the content assigned to it. A mask built at the
+  captured surface's size overhangs the layer, which showed up as an edge fade
+  on one side of the plane only and a blur ramp that never reached full
+  strength.
+- Core Image filters run in a **linear** colour space. A CIColorControls pass
+  meant to sell the glass look - contrast 0.98, brightness +0.02 - pivoted dark
+  pixels about linear 0.5 and lifted the entire screen by a measured +15/255 as
+  soon as the effect began. Only the saturation boost survives; it is a ratio
+  about the pixel's own luma and does not touch brightness.
+
+The plane costs about **3.5% CPU** while on screen, against 0.2% idle. It only
+runs below the threshold angle.
+
 ## [0.2.0] - 2026-09-12
 
 ### Performance

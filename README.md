@@ -1,16 +1,17 @@
 # MacBookUno
 
-**Your MacBook's screen frosts over as you close the lid.**
+**Your MacBook's screen folds as you close the lid.**
 
-A macOS menu bar app that reads the real hinge-angle sensor and sweeps a pane of
-frosted glass across the display as the lid comes down.
+A macOS menu bar app that reads the real hinge-angle sensor and reshapes the
+display as the lid comes down — either frosting it over, or tipping the desktop
+away on a plane of its own.
 
 Inspired by the iPhone Duo's folding animation — where the moving flap behaves
 like frosted glass laid over a screen that is already there — adapted to a
 laptop's single-panel display.
 
 [![CI](https://github.com/orknkrc/MacBookUno/actions/workflows/ci.yml/badge.svg)](https://github.com/orknkrc/MacBookUno/actions/workflows/ci.yml)
-![Platform](https://img.shields.io/badge/platform-macOS%2013%2B-lightgrey)
+![Platform](https://img.shields.io/badge/platform-macOS%2014%2B-lightgrey)
 ![Swift](https://img.shields.io/badge/swift-5.9-orange)
 ![Dependencies](https://img.shields.io/badge/dependencies-none-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-blue)
@@ -24,8 +25,13 @@ laptop's single-panel display.
 
 - Reads the lid angle from the built-in HID sensor, ~0.01° resolution.
 - Above a threshold angle (default 60°) nothing happens at all.
-- Below it, a frosted-glass region sweeps across the internal display, tracking
-  the hinge angle directly. At 0° the whole screen is frosted.
+- Below it, the effect tracks the hinge angle directly. At 0° it is at full
+  strength.
+- Two styles, chosen from the menu:
+  - **Frosted Glass** (default) — a frosted ramp sweeps across the display.
+    Asks for no permissions.
+  - **Fold Plane** — the desktop keeps its own angle while the panel turns
+    around it, the way the reference animation behaves. Needs Screen Recording.
 - Clicks, scrolling and the cursor pass straight through. The overlay is never
   interactive.
 - Internal display only. External monitors are left alone.
@@ -35,7 +41,11 @@ laptop's single-panel display.
 - A MacBook with a lid angle sensor. Apple ships this as a HID device with
   vendor `0x05AC`, product `0x8104`, usage page `0x0020` (Sensor), usage
   `0x008A` (Orientation).
-- macOS 13 or later. Verified on macOS 26.6 / `Mac17,9` (Apple silicon).
+- macOS 14 or later. Verified on macOS 26.6 / `Mac17,9` (Apple silicon).
+  `ScreenCaptureKit`'s `SCScreenshotManager`, used by the Fold Plane style, is
+  a macOS 14 API; the Frosted Glass style itself would run on macOS 13.
+- Screen Recording permission, **only** for the Fold Plane style. The app asks
+  on first use and offers to fall back to Frosted Glass if you decline.
 
 Check whether your Mac has the sensor before building anything:
 
@@ -78,6 +88,7 @@ Everything lives in the menu bar item:
 | Effect Enabled | Toggle the effect; the overlay is removed when off |
 | Threshold Angle | 20°–120° presets, persisted |
 | Sweep Direction | From the hinge upward, or from the top downward |
+| Animation Style | Frosted Glass or Fold Plane |
 | Status | Whether the sensor is being read, and from which field |
 | Quit | Exit |
 
@@ -91,7 +102,12 @@ swift run MacBookUno -- --sweep        # animate the angle up and down
 swift run MacBookUno -- --simulate 30  # hold a fixed angle
 swift run MacBookUno -- --log          # print angle and fold amount
 swift run MacBookUno -- --pattern      # striped backdrop for measuring the ramp
+swift run MacBookUno -- --style plane  # pick a style for this run
+swift run MacBookUno -- --capture-test /tmp/f.png   # one frame, then exit
 ```
+
+`--capture-test` grabs a single frame, writes it out and exits. It is the
+quickest way to tell a Screen Recording problem apart from a rendering one.
 
 ### `lidangle` — the sensor CLI
 
@@ -133,7 +149,7 @@ Bit offsets are never hard-coded. `HIDReportDescriptor` parses the device's own
 descriptor and `LidAngleSensor` picks the angle field out of it, so the code has
 a chance of working on models where the layout differs.
 
-### The fold effect
+### The Frosted Glass style
 
 The first version blurred the whole screen uniformly, and it looked nothing like
 the reference. Watching the folding animation closely, the blur is not uniform
@@ -158,6 +174,97 @@ wash the result keeps too much contrast to read as glass.
 The overlay pins itself to the dark appearance. `NSVisualEffectView` materials
 are appearance-aware, so left to follow the system the fold would look like two
 different effects depending on the user's theme.
+
+### The Fold Plane style
+
+Frosted Glass can only ever be a filter laid over the screen. The reference
+animation is not a filter: the content appears to **hold its own angle** while
+the panel rotates around it. An overlay cannot do that, because it cannot
+reshape what is behind it. The only way is to draw the content ourselves.
+
+So this style captures the internal display with `ScreenCaptureKit` and puts the
+result on a `CALayer` it can rotate. `CATransform3D` supplies the perspective
+(`m34 = -1/1400`) and the plane leans back up to 55° — a full 90° would turn it
+edge-on and hide it, and the reference keeps the content readable throughout.
+
+The feed is a live `SCStream`, not a screenshot. A frozen frame was tried and
+is unusable: the effect starts while the lid is still at a working angle, so a
+still image leaves you looking at a photograph of your desktop while clicks pass
+through to the real thing underneath. Measured ~48 fps.
+
+Four things were learned the hard way:
+
+- **`CALayer.backgroundFilters` does nothing** on a modern compositor. It would
+  have filtered the desktop directly, with no capture and no permission. The
+  filter is retained and never applied — measured, not assumed. That is why the
+  permission-free style can only mask.
+- **`CALayer.mask` and `CALayer.filters` are mutually exclusive.** A layer with
+  both silently drops the filter, whether the mask sits on the layer itself or
+  on an ancestor. The spatial blur ramp therefore comes from Core Image's
+  `CIMaskedVariableBlur`, whose radius follows a `CILinearGradient` mask.
+- **AppKit pins a view-backed layer's `anchorPoint` to (0, 0)**, so a
+  `sublayerTransform` carrying perspective shears the plane into a parallelogram
+  instead of a keystone. The perspective lives on a plain intermediate layer
+  whose anchor is the middle, which also keeps the void from being depth-sorted
+  against the plane: a backdrop layer at z = 0 sorts in *front* of a plane
+  leaning away from the viewer and blacks out the screen completely, but the
+  plane's z only exists inside that intermediate layer.
+
+The void is cut to the plane's own outline rather than filled flat, so the dark
+arrives in step with the fold instead of covering the screen the moment the
+effect starts. A vertical gradient was tried first and is not enough: it darkens
+the top correctly but leaves the side margins transparent, and the real desktop
+showing beside the leaning copy of itself reads as a double image. The hole has to stop
+where the plane becomes genuinely opaque, or the real screen shows through the
+half-transparent band — sharp, beside the leaning blurred copy of itself. Since
+the feather tapers to nothing at the hinge, so does the hole: its bottom corners
+sit on the plane's true corners and only the far ones are pulled in. Measured across the panel in ten bands, the top band goes 37.3 → 37.2 →
+26.5 → 10.0 as the fold runs 0 → 12% → 30% → 50%, while the bottom band stays
+within 3.5 of untouched throughout.
+
+The blur is bracketed by `CIAffineClamp` and `CICrop`. Without the clamp the
+blur samples transparent pixels beyond the capture and bleeds a grey haze into
+the black margins around the leaning plane.
+
+Both Core Image masks — the blur ramp and the edge fade below — are built in
+the layer's **bounds, in points**. Not pixels, and not the size of the captured
+surface. Getting this wrong is not obvious from looking at the result: a mask
+built at capture size (3024 × 1964 against a plane 1421 points wide) overhangs
+the layer, so its near edge lands inside and its far edge falls outside
+entirely. The visible symptom was an edge fade on one side of the plane and not
+the other, plus a blur ramp that never reached full strength. Widening the fade
+from 110 to 280 moved the left edge by eight measured column buckets and left
+the right edge identical to two decimal places, which is what pinned the space
+down.
+
+Blurring the contents is only half of it. The rectangle they sit in still ends
+on a hard line, so a blurred desktop reads as a sharp-edged cutout pasted onto
+the void. A second Core Image pass fades the plane's alpha out along its border
+— a white rectangle the size of the plane, used as an alpha mask through
+`CISourceInCompositing`.
+
+That rectangle goes through the **same variable blur as the contents, driven by
+the same gradient**, so an edge is exactly as soft as the picture beside it. A
+uniform feather was tried first and is wrong in a way that is obvious once
+you look for it: it rounds off the hinge end, which is the part of the panel
+still facing the viewer squarely and the part that is not blurred at all. The
+rectangle is at the plane's true size rather than inset, so at the hinge the
+edge lands on the physical border of the screen, where a hard edge cannot be
+seen. The margin the fade needs higher up is supplied by the keystone, which
+widens with the fold — 185 points per side at half fold against a 60 point
+feather.
+
+A blur alone reads as grey mist, because blurring averages colour away, so the
+saturation is pushed back up to make it read as glass. Brightness and contrast
+were tried alongside it and had to be removed: **Core Image works in a linear
+colour space**, so easing the contrast to 0.98 pivots dark pixels about linear
+0.5 — an sRGB 0.1 pixel is 0.010 in linear and comes back 0.020, twice as
+bright. Measured against an unfiltered capture, that put a uniform +15/255 white
+haze over the whole screen from the moment the effect began. Saturation is safe
+because it is a ratio about the pixel's own luma and leaves brightness alone.
+
+Cost: about **3.5% CPU** while the plane is on screen, against 0.2% idle. It
+only runs below the threshold angle.
 
 ### A measured gotcha in `maskImage`
 
@@ -217,22 +324,60 @@ the **SPU** transport — neither USB nor Bluetooth. There is no entitlement tha
 covers it, so `IOHIDDeviceOpen` would fail with `kIOReturnNotPermitted` inside
 the sandbox.
 
-`Scripts/make-app.sh` therefore ships **no entitlements file** and only ad-hoc
-signs the bundle. Verify with:
+`Scripts/make-app.sh` therefore ships **no entitlements file**. Verify with:
 
 ```bash
 codesign -d --entitlements - build/MacBookUno.app
 ```
 
-`com.apple.security.app-sandbox` should not appear. The cost is that the app
-cannot be distributed through the Mac App Store.
+`com.apple.security.app-sandbox` should not appear. CI fails the build if it
+ever does. The cost is that the app cannot be distributed through the Mac App
+Store.
+
+## Screen Recording and code signing
+
+Only the Fold Plane style needs Screen Recording. macOS remembers that grant
+against the app's **code signature**, which matters while developing: an ad-hoc
+signature is a hash of the binary, so every rebuild looks like a different app
+and the permission is asked for again.
+
+`Scripts/make-app.sh` signs with a real identity when it finds one and falls
+back to ad-hoc otherwise. To create one:
+
+1. Open `/System/Library/CoreServices/Applications/Keychain Access.app` (it is
+   no longer in Utilities).
+2. **Keychain Access → Certificate Assistant → Create a Certificate…**, identity
+   type *Self Signed Root*, certificate type *Code Signing*.
+3. Double-click the new certificate → **Trust** → *Always Trust*. Without this
+   step `security find-identity -v -p codesigning` reports it as
+   `CSSMERR_TP_NOT_TRUSTED` and the script will not see it.
+
+```bash
+security find-identity -v -p codesigning   # should list your certificate
+CODESIGN_IDENTITY="My Certificate" ./Scripts/make-app.sh
+```
+
+The designated requirement then becomes `identifier … and certificate leaf = …`
+instead of a bare `cdhash`, and the grant survives rebuilds. If a stale ad-hoc
+grant is already recorded, clear it once with
+`tccutil reset ScreenCapture com.orknkrc.macbookuno`.
+
+**None of this applies to people who install a release build.** Their binary
+never changes, so they grant the permission once. A Developer ID signature plus
+notarization would additionally remove the first-launch Gatekeeper warning.
+
+Note that `swift run MacBookUno` is a different case again: the SwiftPM binary
+is unsigned, and the permission is attributed to the terminal or IDE that
+launched it. Test the Fold Plane style through `build/MacBookUno.app`.
 
 ## Limitations
 
-- **Content is not stretched.** Descriptions of the Duo animation mention a
-  slight stretch alongside the blur. Doing that would mean capturing and
-  redrawing screen content (ScreenCaptureKit + Screen Recording permission). The
-  current approach asks for no permissions at all.
+- **Frosted Glass cannot reshape content.** It is a filter over the screen, so
+  it can vary blur across the panel but never tip the desktop away. That is what
+  the Fold Plane style is for, and it is the reason that style needs a
+  permission the other one does not.
+- **The lean is capped at 55°.** Past that the plane turns close to edge-on and
+  the content stops being readable, which is not what the reference does.
 - **The sweep direction is an interpretation.** A laptop has no crease and no
   separate flap, so both directions are offered in the menu rather than one
   being declared correct.
@@ -268,6 +413,10 @@ Sources/
   lidangle/                     Sensor inspection CLI
   MacBookUno/                   Menu bar app (AppKit)
     FoldOverlayWindow.swift     Borderless, transparent, click-through window
+    FoldStyle.swift             Style enum + renderer protocol
+    BlurFoldStyle.swift         Frosted Glass, permission-free
+    PlaneFoldStyle.swift        Fold Plane, captured desktop on a leaning plane
+    ScreenCapture.swift         ScreenCaptureKit one-shot and live stream
     FoldMask.swift              Gradient mask for the frosted region
     FoldController.swift        Angle -> progress mapping, 60 Hz frame loop
     PatternBackdrop.swift       --pattern measurement backdrop
