@@ -16,6 +16,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let thresholdItem = NSMenuItem(title: "Threshold Angle", action: nil, keyEquivalent: "")
     private let directionItem = NSMenuItem(title: "Sweep Direction", action: nil, keyEquivalent: "")
     private let styleItem = NSMenuItem(title: "Animation Style", action: nil, keyEquivalent: "")
+    private let previewItem = NSMenuItem(title: "Preview", action: nil, keyEquivalent: "")
+    private let loginItem = NSMenuItem(title: "Open at Login", action: #selector(toggleLoginItem), keyEquivalent: "")
+    private let previewView = FoldPreviewView()
 
     /// Test flags handed over from main.swift.
     var simulatedAngle: Double?
@@ -141,6 +144,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         directionItem.submenu = buildDirectionMenu()
         menu.addItem(directionItem)
 
+        previewItem.submenu = buildPreviewMenu()
+        menu.addItem(previewItem)
+
+        loginItem.target = self
+        menu.addItem(loginItem)
+
         menu.addItem(.separator())
         menu.addItem(statusLine)
         menu.addItem(.separator())
@@ -153,6 +162,85 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         updateThresholdTitle()
         updateDirectionTitle()
         updateStyleTitle()
+        // Reflect --simulate, so the slider and the sensor never disagree about
+        // which angle the effect is being driven from.
+        previewView.show(angle: controller.simulatedAngle)
+        updatePreviewTitle()
+        updateLoginTitle()
+    }
+
+    @objc private func toggleLoginItem() {
+        let wanted = LoginItem.state != .on
+        if let problem = LoginItem.set(wanted) {
+            let alert = NSAlert()
+            alert.messageText = "Open at Login"
+            alert.informativeText = problem
+            alert.alertStyle = .warning
+            alert.runModal()
+        }
+        updateLoginTitle()
+    }
+
+    private func updateLoginTitle() {
+        switch LoginItem.state {
+        case .on:
+            loginItem.title = "Open at Login"
+            loginItem.state = .on
+            loginItem.isEnabled = true
+        case .off:
+            loginItem.title = "Open at Login"
+            loginItem.state = .off
+            loginItem.isEnabled = true
+        case .needsApproval:
+            // Registered but not allowed yet. Saying so beats a tick that lies.
+            loginItem.title = "Open at Login — approve in System Settings"
+            loginItem.state = .mixed
+            loginItem.isEnabled = true
+        case .unavailable:
+            loginItem.title = "Open at Login — needs the app bundle"
+            loginItem.state = .off
+            loginItem.isEnabled = false
+        }
+    }
+
+    /// The preview: a slider that feeds the controller a pretend angle.
+    private func buildPreviewMenu() -> NSMenu {
+        let submenu = NSMenu()
+
+        previewView.onAngle = { [weak self] angle in
+            guard let self else { return }
+            self.controller.simulatedAngle = angle
+            self.updatePreviewTitle()
+            // The frame loop idles once nothing is moving, and dragging the
+            // slider is exactly the case it cannot see coming.
+            self.controller.wake()
+        }
+
+        let holder = NSMenuItem()
+        holder.view = previewView
+        submenu.addItem(holder)
+
+        submenu.addItem(.separator())
+        let follow = NSMenuItem(title: "Follow the Lid",
+                                action: #selector(stopPreview), keyEquivalent: "")
+        follow.target = self
+        submenu.addItem(follow)
+        return submenu
+    }
+
+    @objc private func stopPreview() {
+        controller.simulatedAngle = nil
+        previewView.show(angle: nil)
+        updatePreviewTitle()
+        controller.wake()
+    }
+
+    private func updatePreviewTitle() {
+        if let angle = controller?.simulatedAngle {
+            previewItem.title = String(format: "Preview: %.0f°", angle)
+        } else {
+            previewItem.title = "Preview: Off"
+        }
     }
 
     private func buildThresholdMenu() -> NSMenu {
@@ -250,7 +338,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     // MARK: - Menu updates
 
-    func menuWillOpen(_ menu: NSMenu) { menuIsOpen = true }
+    func menuWillOpen(_ menu: NSMenu) {
+        menuIsOpen = true
+        // The login item can be changed in System Settings behind our back, so
+        // it is read fresh every time rather than cached.
+        updateLoginTitle()
+    }
     func menuDidClose(_ menu: NSMenu) { menuIsOpen = false }
 
     /// Updating text while the menu is closed is wasted work; we refresh only
