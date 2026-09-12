@@ -196,110 +196,31 @@ result on a `CALayer` it can rotate. `CATransform3D` supplies the perspective
 (`m34 = -1/1400`) and the plane leans back up to 55° — a full 90° would turn it
 edge-on and hide it, and the reference keeps the content readable throughout.
 
-The feed is a live `SCStream`, not a screenshot. A frozen frame was tried and
-is unusable: the effect starts while the lid is still at a working angle, so a
+The feed is a live `SCStream`, not a screenshot. A frozen frame was tried and is
+unusable: the effect starts while the lid is still at a working angle, so a
 still image leaves you looking at a photograph of your desktop while clicks pass
 through to the real thing underneath. Measured ~48 fps.
 
-Four things were learned the hard way:
+One gradient drives everything — the blur, the softness of the plane's own
+border, the shading that darkens the far end, and the shape of the dark it folds
+into. They are built from the same ramp so they arrive together and cannot drift
+apart.
+
+Three findings did most to shape it:
 
 - **`CALayer.backgroundFilters` does nothing** on a modern compositor. It would
-  have filtered the desktop directly, with no capture and no permission. The
-  filter is retained and never applied — measured, not assumed. That is why the
-  permission-free style can only mask.
+  have filtered the desktop directly, with no capture and no permission at all.
+  The filter is retained and never applied — measured, not assumed.
 - **`CALayer.mask` and `CALayer.filters` are mutually exclusive.** A layer with
-  both silently drops the filter, whether the mask sits on the layer itself or
-  on an ancestor. The spatial blur ramp therefore comes from Core Image's
-  `CIMaskedVariableBlur`, whose radius follows a `CILinearGradient` mask.
-- **AppKit pins a view-backed layer's `anchorPoint` to (0, 0)**, so a
-  `sublayerTransform` carrying perspective shears the plane into a parallelogram
-  instead of a keystone. The perspective lives on a plain intermediate layer
-  whose anchor is the middle, which also keeps the void from being depth-sorted
-  against the plane: a backdrop layer at z = 0 sorts in *front* of a plane
-  leaning away from the viewer and blacks out the screen completely, but the
-  plane's z only exists inside that intermediate layer.
+  both silently drops the filter. The spatial blur therefore comes from Core
+  Image's `CIMaskedVariableBlur` rather than a layer mask.
+- **Core Image works in a linear colour space.** A contrast of 0.98, meant to
+  sell the glass, pivots dark pixels about linear 0.5 and put a uniform +15/255
+  white haze over the whole screen.
 
-The void is cut to the plane's own outline rather than filled flat, so the dark
-arrives in step with the fold instead of covering the screen the moment the
-effect starts. A vertical gradient was tried first and is not enough: it darkens
-the top correctly but leaves the side margins transparent, and the real desktop
-showing beside the leaning copy of itself reads as a double image. The hole has to stop
-where the plane becomes genuinely opaque, or the real screen shows through the
-half-transparent band — sharp, beside the leaning blurred copy of itself. So it
-is inset by the *local* softness at every height, sampled from the same ramp,
-and by 2.5 feather widths rather than one.
-
-Both numbers were earned. A straight line from the hinge corner to the far
-corner leaks, because the border's width follows the ramp while the line rises
-evenly; and the leak *moves* as the lid closes — top of the screen at a quarter
-fold, bottom at nine tenths — because the ramp's knee travels towards the hinge,
-which is what made one fault look like several. The measurement that settled it
-tints the three layers apart: the plane red, the void blue, so any green pixel
-is provably the real screen and no assumption about the desktop's colours is
-needed. Leaked pixels at 75% and 90% fold went from 0.053% and 0.127% of the
-screen to zero. Measured across the panel in ten bands, the top band goes 37.3 → 37.2 →
-26.5 → 10.0 as the fold runs 0 → 12% → 30% → 50%, while the bottom band stays
-within 3.5 of untouched throughout.
-
-The blur is bracketed by `CIAffineClamp` and `CICrop`. Without the clamp the
-blur samples transparent pixels beyond the capture and bleeds a grey haze into
-the black margins around the leaning plane.
-
-Both Core Image masks — the blur ramp and the edge fade below — are built in
-the layer's **bounds, in points**. Not pixels, and not the size of the captured
-surface. Getting this wrong is not obvious from looking at the result: a mask
-built at capture size (3024 × 1964 against a plane 1421 points wide) overhangs
-the layer, so its near edge lands inside and its far edge falls outside
-entirely. The visible symptom was an edge fade on one side of the plane and not
-the other, plus a blur ramp that never reached full strength. Widening the fade
-from 110 to 280 moved the left edge by eight measured column buckets and left
-the right edge identical to two decimal places, which is what pinned the space
-down.
-
-Blurring the contents is only half of it. The rectangle they sit in still ends
-on a hard line, so a blurred desktop reads as a sharp-edged cutout pasted onto
-the void. A second Core Image pass fades the plane's alpha out along its border
-— a white rectangle the size of the plane, used as an alpha mask through
-`CISourceInCompositing`.
-
-That rectangle goes through the **same variable blur as the contents, driven by
-the same gradient**, so an edge is exactly as soft as the picture beside it. A
-uniform feather was tried first and is wrong in a way that is obvious once
-you look for it: it rounds off the hinge end, which is the part of the panel
-still facing the viewer squarely and the part that is not blurred at all. The
-rectangle is at the plane's true size rather than inset, so at the hinge the
-edge lands on the physical border of the screen, where a hard edge cannot be
-seen. The margin the fade needs higher up is supplied by the keystone, which
-widens with the fold — 185 points per side at half fold against a 60 point
-feather.
-
-The far end of the plane is also shaded down, by up to half its brightness at
-full fold. A surface turning away from the light gets darker, and after the
-perspective this is the strongest depth cue available — without it the plane
-reads as a blurred picture lying flat rather than a panel leaning back. It is a
-`CIMultiplyCompositing` pass against the same gradient the blur uses, so the
-shading and the softening arrive together. A multiply and not the brightness
-control, deliberately: multiplying is a ratio, it scales every pixel by the same
-factor and cannot lift a dark one, so the linear working space costs nothing.
-
-A blur alone reads as grey mist, because blurring averages colour away, so the
-saturation is pushed back up to make it read as glass. Brightness and contrast
-were tried alongside it and had to be removed: **Core Image works in a linear
-colour space**, so easing the contrast to 0.98 pivots dark pixels about linear
-0.5 — an sRGB 0.1 pixel is 0.010 in linear and comes back 0.020, twice as
-bright. Measured against an unfiltered capture, that put a uniform +15/255 white
-haze over the whole screen from the moment the effect began. Saturation is safe
-because it is a ratio about the pixel's own luma and leaves brightness alone.
-
-The plane is dissolved in and out rather than switched on and off. It can never
-be as sharp as the screen it is copying — any transform at all puts the captured
-pixels through bilinear resampling and breaks their alignment with the display
-grid — and that softness does not fall away as the fold does: measured on a
-static region, the plane is still 12% softer than the real screen at a fold of
-0.002, where the lean is a twentieth of a degree and every filter is already
-switched off. So there is no angle at which it can simply be removed without the
-screen snapping into focus. Fading it over the first 8% of the fold takes the
-step at the cut-off from 11.9% to 0.5%.
+The rest — why the void is cut to the plane's outline rather than filled flat,
+why the plane is dissolved rather than switched off, and how any of it was
+measured — is in **[docs/fold-plane.md](docs/fold-plane.md)**.
 
 Cost: about **3.5% CPU** while the plane is on screen, against 0.2% idle. It
 only runs below the threshold angle.
@@ -461,6 +382,7 @@ Sources/
     FoldController.swift        Angle -> progress mapping, 60 Hz frame loop
     PatternBackdrop.swift       --pattern measurement backdrop
 Scripts/make-app.sh             Builds MacBookUno.app
+docs/fold-plane.md              How the Fold Plane works, and the measurements
 ```
 
 `LidAngleKit` never imports AppKit and knows nothing about displays, so it can
