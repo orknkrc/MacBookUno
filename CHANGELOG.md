@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-12
+
 ### Added
 
 - **Fold Plane style.** The desktop keeps its own angle on a `CATransform3D`
@@ -23,18 +25,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     contents, so an edge is exactly as soft as the picture beside it: the hinge
     end stays crisp where nothing is blurred, and only the far end dissolves. A
     uniform feather was tried first and rounds off the hinge corners, which are
-    the part of the panel still facing the viewer squarely. The hinge edge is excluded, since fading it
-    would leave a dark band across the bottom of the screen.
+    the part of the panel still facing the viewer squarely.
   - The void is cut to the plane's outline rather than filled flat, so the dark
-    descends with the fold. Measured in ten bands, the top band goes 37.3 to
-    10.0 as the fold runs 0 to 50% while the bottom band stays within 3.5 of
-    untouched. A vertical gradient was tried first and leaves the side margins
-    transparent, where the real desktop beside the leaning copy of itself reads
-    as a double image. The hole stops where the plane's alpha actually
-    reaches 1, which now tapers with the feather: its bottom corners sit on the
-    plane's true corners and only the far ones are pulled in. Cut any wider and
-    a half-transparent band is left with no dark behind it, and the real screen
-    shows through it.
+    descends with the fold instead of covering the screen the moment the effect
+    starts. Measured in ten bands, the top band goes 37.3 to 10.0 as the fold
+    runs 0 to 50% while the bottom band stays within 3.5 of untouched. A
+    vertical gradient was tried first and leaves the side margins transparent,
+    where the real desktop beside the leaning copy of itself reads as a double
+    image.
+  - That cut stops where the plane's alpha actually reaches 1, and tapers along
+    with the feather: its bottom corners sit on the plane's true corners and
+    only the far ones are pulled in. Cut any wider and a half-transparent band
+    is left with no dark behind it, and the real screen shows through it.
   - If Screen Recording is unavailable the app says why and offers to open
     System Settings or switch to Frosted Glass, rather than showing nothing.
 - `--style blur|plane` to pick a style for one run, and `--capture-test <path>`
@@ -47,12 +49,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Minimum macOS is now **14**, for `SCScreenshotManager`. The Frosted Glass
-  style alone would still run on macOS 13.
+- Minimum macOS is now **14**, for `SCScreenshotManager`, in `Package.swift`
+  and in the bundle's `LSMinimumSystemVersion`. The Frosted Glass style alone
+  would still run on macOS 13.
 
 ### Notes
 
-Three things measured while building this, all of which shaped the design:
+Measured while building this, all of it load-bearing on the design:
 
 - `CALayer.backgroundFilters` does nothing on a modern compositor. It would have
   blurred the desktop directly with no capture and no permission; the filter is
@@ -180,6 +183,7 @@ First working release.
   than stretched to the view; the mask is built at
   `bounds.height * backingScaleFactor` to compensate.
 
-[Unreleased]: https://github.com/orknkrc/MacBookUno/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/orknkrc/MacBookUno/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/orknkrc/MacBookUno/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/orknkrc/MacBookUno/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/orknkrc/MacBookUno/releases/tag/v0.1.0
