@@ -23,17 +23,24 @@ enum LoginItem {
         case off
         /// Registered, but the user has not allowed it in System Settings yet.
         case needsApproval
-        /// Not available at all - typically running outside an app bundle.
-        case unavailable
     }
 
+    /// `notFound` is reported as simply off rather than as unavailable.
+    ///
+    /// It is what this app gets from a stock build, wherever the bundle lives -
+    /// measured from the build directory, from `~/Applications` and from a
+    /// temporary directory, all three - and the cause is not something the app
+    /// can establish. A self-signed bundle carries no Team ID, which is the
+    /// likeliest reason macOS has no record to report on, but that is a guess.
+    ///
+    /// Presenting a guess as a greyed-out row is worse than letting the user
+    /// press the switch and showing whatever macOS says if it refuses.
     static var state: State {
         switch SMAppService.mainApp.status {
         case .enabled: return .on
-        case .notRegistered: return .off
         case .requiresApproval: return .needsApproval
-        case .notFound: return .unavailable
-        @unknown default: return .unavailable
+        case .notRegistered, .notFound: return .off
+        @unknown default: return .off
         }
     }
 

@@ -10,7 +10,7 @@ enum FoldStyle: String, CaseIterable {
 
     var localizedName: String {
         switch self {
-        case .blur:  return "Blur"
+        case .blur:  return "Frosted Glass"
         case .plane: return "Fold Plane"
         }
     }

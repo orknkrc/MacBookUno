@@ -9,8 +9,8 @@ enum SweepDirection: String, CaseIterable {
 
     var localizedName: String {
         switch self {
-        case .fromHinge: return "From hinge, upward"
-        case .fromTop:   return "From top, downward"
+        case .fromHinge: return "From the hinge"
+        case .fromTop:   return "From the top"
         }
     }
 }

@@ -9,13 +9,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private var statusItem: NSStatusItem!
     private let menu = NSMenu()
-    private let angleItem = NSMenuItem(title: "Angle: —", action: nil, keyEquivalent: "")
-    private let foldItem = NSMenuItem(title: "Fold: —", action: nil, keyEquivalent: "")
-    private let statusLine = NSMenuItem(title: "Status: starting…", action: nil, keyEquivalent: "")
-    private let enableItem = NSMenuItem(title: "Effect Enabled", action: #selector(toggleEnabled), keyEquivalent: "")
-    private let thresholdItem = NSMenuItem(title: "Threshold Angle", action: nil, keyEquivalent: "")
-    private let directionItem = NSMenuItem(title: "Sweep Direction", action: nil, keyEquivalent: "")
-    private let styleItem = NSMenuItem(title: "Animation Style", action: nil, keyEquivalent: "")
+    private let angleItem = NSMenuItem(title: "—", action: nil, keyEquivalent: "")
+    private let foldItem = NSMenuItem(title: "—", action: nil, keyEquivalent: "")
+    private let statusLine = NSMenuItem(title: "Starting…", action: nil, keyEquivalent: "")
+    private let enableItem = NSMenuItem(title: "Effect", action: #selector(toggleEnabled), keyEquivalent: "")
+    private let thresholdItem = NSMenuItem(title: "Threshold", action: nil, keyEquivalent: "")
+    private let directionItem = NSMenuItem(title: "Sweep", action: nil, keyEquivalent: "")
+    private let styleItem = NSMenuItem(title: "Style", action: nil, keyEquivalent: "")
+    /// The live sensor reading, folded into a submenu of its own: it answers
+    /// "is this working?", which is a question you ask rarely and never act on
+    /// from here, so it does not belong in front of the controls.
+    private let sensorItem = NSMenuItem(title: "Sensor: starting…", action: nil, keyEquivalent: "")
     private let previewItem = NSMenuItem(title: "Preview", action: nil, keyEquivalent: "")
 
     /// How long a preview survives after the menu closes.
@@ -39,7 +43,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var previewFromSlider = false
     /// The release in flight: where it started and when.
     private var previewReleasing: (from: Double, start: TimeInterval)?
-    private let previewView = FoldPreviewView()
+    /// The widest angle the preview offers. A few degrees past the hinge's own
+    /// maximum, so the slider can start above any threshold and the moment the
+    /// effect begins is visible.
+    private static let previewMaxAngle: Double = 135
+    private let previewView = MenuSliderView(minimum: 0, maximum: previewMaxAngle)
     private let loginItem = NSMenuItem(title: "Open at Login", action: #selector(toggleLoginItem), keyEquivalent: "")
 
     /// Test flags handed over from main.swift.
@@ -56,6 +64,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     /// Shown once per launch: repeating a modal on every frame would be unusable.
     private var reportedStyleFailure = false
+
+    /// Whether the sensor is usable, for the icon and the Sensor row.
+    private var sensorIsHealthy = true
 
     private var menuIsOpen = false
     private var lastMenuRefresh: TimeInterval = 0
@@ -136,58 +147,61 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func buildStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        if let button = statusItem.button {
-            if let image = NSImage(systemSymbolName: "laptopcomputer", accessibilityDescription: "Lid fold effect") {
-                image.isTemplate = true
-                button.image = image
-            } else {
-                button.title = "◐"
-            }
-        }
 
         angleItem.isEnabled = false
         foldItem.isEnabled = false
         statusLine.isEnabled = false
 
+        // Ordered by what you came here to do. The effect's own switch first,
+        // then the tool you reach for while tuning, then the settings, and the
+        // diagnostics last - they used to sit in the first two rows, where the
+        // eye lands, despite being the one thing you never act on.
         menu.delegate = self
-        menu.addItem(angleItem)
-        menu.addItem(foldItem)
-        menu.addItem(.separator())
 
         enableItem.target = self
         enableItem.state = settings.isEnabled ? .on : .off
         menu.addItem(enableItem)
 
+        menu.addItem(.separator())
+        // The slider sits in the menu itself rather than behind a submenu: it is
+        // the most-handled control here and was two clicks away. Nudging it by
+        // accident is survivable now that a preview releases itself.
+        addPreviewItems(to: menu)
+
+        menu.addItem(.separator())
         thresholdItem.submenu = buildThresholdMenu()
         menu.addItem(thresholdItem)
-
         styleItem.submenu = buildStyleMenu()
         menu.addItem(styleItem)
-
         directionItem.submenu = buildDirectionMenu()
         menu.addItem(directionItem)
 
-        previewItem.submenu = buildPreviewMenu()
-        menu.addItem(previewItem)
-
+        menu.addItem(.separator())
+        sensorItem.submenu = buildSensorMenu()
+        menu.addItem(sensorItem)
         loginItem.target = self
         menu.addItem(loginItem)
 
         menu.addItem(.separator())
-        menu.addItem(statusLine)
-        menu.addItem(.separator())
+        // Version in the interface, not only behind --version: it is the first
+        // thing anyone reporting a problem is asked for.
+        let version = NSMenuItem(title: "MacBookUno \(ProjectVersion.current)",
+                                 action: nil, keyEquivalent: "")
+        version.isEnabled = false
+        menu.addItem(version)
 
         let quit = NSMenuItem(title: "Quit", action: #selector(quit), keyEquivalent: "q")
         quit.target = self
         menu.addItem(quit)
 
         statusItem.menu = menu
+        updateStatusIcon()
         updateThresholdTitle()
         updateDirectionTitle()
         updateStyleTitle()
         // Reflect --simulate, so the slider and the sensor never disagree about
         // which angle the effect is being driven from.
-        previewView.show(angle: controller.simulatedAngle)
+        showPreview(angle: controller.simulatedAngle)
         updatePreviewTitle()
         updateLoginTitle()
     }
@@ -219,18 +233,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             loginItem.title = "Open at Login — approve in System Settings"
             loginItem.state = .mixed
             loginItem.isEnabled = true
-        case .unavailable:
-            loginItem.title = "Open at Login — needs the app bundle"
-            loginItem.state = .off
-            loginItem.isEnabled = false
         }
     }
 
     /// The preview: a slider that feeds the controller a pretend angle.
-    private func buildPreviewMenu() -> NSMenu {
-        let submenu = NSMenu()
-
-        previewView.onAngle = { [weak self] angle in
+    /// Puts the slider and its escape hatch straight into a menu.
+    private func addPreviewItems(to menu: NSMenu) {
+        previewView.onChange = { [weak self] angle in
             guard let self else { return }
             self.previewFromSlider = true
             self.previewReleasing = nil
@@ -244,13 +253,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         let holder = NSMenuItem()
         holder.view = previewView
-        submenu.addItem(holder)
+        menu.addItem(holder)
 
+        previewItem.action = #selector(stopPreview)
+        previewItem.target = self
+        menu.addItem(previewItem)
+    }
+
+    /// The live reading, out of the way but still one hop from the menu.
+    private func buildSensorMenu() -> NSMenu {
+        let submenu = NSMenu()
+        submenu.addItem(angleItem)
+        submenu.addItem(foldItem)
         submenu.addItem(.separator())
-        let follow = NSMenuItem(title: "Follow the Lid",
-                                action: #selector(stopPreview), keyEquivalent: "")
-        follow.target = self
-        submenu.addItem(follow)
+        submenu.addItem(statusLine)
         return submenu
     }
 
@@ -259,7 +275,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         previewReleasing = nil
         previewFromSlider = false
         controller.simulatedAngle = nil
-        previewView.show(angle: nil)
+        showPreview(angle: nil)
         updatePreviewTitle()
         controller.wake()
     }
@@ -290,7 +306,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             previewReleasing = nil
             previewFromSlider = false
             controller.simulatedAngle = nil
-            previewView.show(angle: nil)
+            showPreview(angle: nil)
             updatePreviewTitle()
             controller.wake()
             return
@@ -302,16 +318,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         controller.wake()
     }
 
-    private func updatePreviewTitle() {
-        if let angle = controller?.simulatedAngle {
-            previewItem.title = String(format: "Preview: %.0f°", angle)
+    /// `nil` parks the knob at the top and says there is nothing to escape.
+    private func showPreview(angle: Double?) {
+        if let angle {
+            previewView.show(value: angle,
+                             caption: String(format: "Previewing %.0f°", angle))
         } else {
-            previewItem.title = "Preview: Off"
+            previewView.show(value: AppDelegate.previewMaxAngle,
+                             caption: "Drag to preview")
         }
+    }
+
+    private func updatePreviewTitle() {
+        // The slider's own readout already says which angle is being previewed,
+        // so this row carries only the way out of one - and nothing at all when
+        // there is nothing to escape from.
+        previewItem.title = "Follow the Lid"
+        previewItem.isHidden = controller?.simulatedAngle == nil
     }
 
     private func buildThresholdMenu() -> NSMenu {
         let submenu = NSMenu()
+
         for value in Settings.thresholdChoices {
             let item = NSMenuItem(title: String(format: "%.0f°", value),
                                   action: #selector(selectThreshold(_:)), keyEquivalent: "")
@@ -350,7 +378,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func updateStyleTitle() {
-        styleItem.title = "Animation Style: \(settings.foldStyle.localizedName)"
+        styleItem.title = "Style: \(settings.foldStyle.localizedName)"
         guard let submenu = styleItem.submenu else { return }
         for item in submenu.items {
             guard let raw = item.representedObject as? String else { continue }
@@ -385,7 +413,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func updateDirectionTitle() {
-        directionItem.title = "Sweep Direction: \(settings.sweepDirection.localizedName)"
+        directionItem.title = "Sweep: \(settings.sweepDirection.localizedName)"
         guard let submenu = directionItem.submenu else { return }
         for item in submenu.items {
             guard let raw = item.representedObject as? String else { continue }
@@ -394,7 +422,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func updateThresholdTitle() {
-        thresholdItem.title = String(format: "Threshold Angle: %.0f°", settings.threshold)
+        thresholdItem.title = String(format: "Threshold: %.0f°", settings.threshold)
         if let submenu = thresholdItem.submenu {
             for item in submenu.items {
                 guard let value = item.representedObject as? Double else { continue }
@@ -407,12 +435,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func menuWillOpen(_ menu: NSMenu) {
         menuIsOpen = true
+        // The readings are refreshed from the frame loop, and that loop idles
+        // while the lid is still - so without this the angle and fold rows sit
+        // at whatever they last showed for as long as the menu is open.
+        controller?.wake()
         // The login item can be changed in System Settings behind our back, so
         // it is read fresh every time rather than cached.
         updateLoginTitle()
         // Back at the controls: the preview is safe again.
         cancelPreviewTimer()
+        // A release caught half-way leaves the angle where it got to, so the
+        // slider has to be told rather than left at where the drag ended.
         previewReleasing = nil
+        showPreview(angle: controller?.simulatedAngle)
+        updatePreviewTitle()
     }
 
     func menuDidClose(_ menu: NSMenu) {
@@ -435,13 +471,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         lastMenuRefresh = now
 
         if let raw, let smoothed {
-            angleItem.title = String(format: "Angle: %.2f°  (smoothed %.2f°)", raw, smoothed)
+            angleItem.title = String(format: "%.2f°  (smoothed %.2f°)", raw, smoothed)
         } else {
-            angleItem.title = "Angle: — (no reading)"
+            angleItem.title = "No reading"
         }
         foldItem.title = settings.isEnabled
-            ? String(format: "Fold: %%%.0f", intensity * 100)
-            : "Fold: off"
+            ? String(format: "Folded %%%.0f", intensity * 100)
+            : "Effect off"
     }
 
     private func logIfNeeded(raw: Double?, smoothed: Double?, intensity: Double) {
@@ -459,21 +495,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func apply(state: LidAngleMonitor.State) {
         switch state {
         case .stopped:
-            statusLine.title = "Status: stopped"
+            statusLine.title = "Not reading the sensor"
+            sensorItem.title = "Sensor: stopped"
+            sensorIsHealthy = false
         case .running:
             let field = monitor.fieldDescription ?? "-"
             let source = monitor.cadence.rawValue
-            statusLine.title = "Status: reading via \(source) — \(field)"
+            statusLine.title = "Reading via \(source) — \(field)"
+            sensorItem.title = "Sensor: OK"
+            sensorIsHealthy = true
         case .degraded(let reason):
-            statusLine.title = "Status: problem — \(reason)"
+            statusLine.title = reason
+            sensorItem.title = "Sensor: problem"
+            sensorIsHealthy = false
         }
+        updateStatusIcon()
     }
 
     /// The selected style cannot run - almost always a missing Screen Recording
     /// permission, which macOS grants per binary, so switching between a debug
     /// build and the app bundle triggers it.
     private func reportStyleUnavailable(_ message: String) {
-        statusLine.title = "Status: \(settings.foldStyle.localizedName) unavailable"
+        sensorItem.title = "Sensor: OK — \(settings.foldStyle.localizedName) unavailable"
         guard !reportedStyleFailure else { return }
         reportedStyleFailure = true
 
@@ -500,7 +543,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func presentStartupFailure(_ error: Error) {
-        statusLine.title = "Status: could not open the sensor"
+        statusLine.title = "Could not open the sensor"
+        sensorItem.title = "Sensor: unavailable"
+        sensorIsHealthy = false
+        updateStatusIcon()
         // Make sure the .accessory app's alert does not end up behind other windows.
         NSApp.activate(ignoringOtherApps: true)
         let alert = NSAlert()
@@ -513,9 +559,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     // MARK: - Actions
 
+    /// The icon is the only thing the app says without being opened, so it
+    /// carries the two states worth knowing at a glance: the effect switched
+    /// off, and a sensor that cannot be read.
+    private func updateStatusIcon() {
+        guard let button = statusItem?.button else { return }
+        let name: String
+        let label: String
+        if !sensorIsHealthy {
+            name = "laptopcomputer.trianglebadge.exclamationmark"
+            label = "Lid angle sensor unavailable"
+        } else if !settings.isEnabled {
+            name = "laptopcomputer.slash"
+            label = "Fold effect off"
+        } else {
+            name = "laptopcomputer"
+            label = "Fold effect on"
+        }
+        if let image = NSImage(systemSymbolName: name, accessibilityDescription: label) {
+            image.isTemplate = true
+            button.image = image
+            button.title = ""
+        } else {
+            button.image = nil
+            button.title = "◐"
+        }
+        button.toolTip = label
+    }
+
     @objc private func toggleEnabled() {
         settings.isEnabled.toggle()
         enableItem.state = settings.isEnabled ? .on : .off
+        updateStatusIcon()
         // The frame loop idles when nothing moves, so every settings change has
         // to wake it or the effect would not update until the lid next moves.
         controller.wake()
