@@ -69,7 +69,10 @@ A laptop icon appears in the menu bar. To quit: menu bar icon → **Quit**, or
 `pkill -x MacBookUno`.
 
 To launch it at login, use **Open at Login** in the menu. macOS may ask you to
-allow it under System Settings → General → Login Items the first time.
+allow it under System Settings → General → Login Items the first time. On a
+self-signed build `SMAppService` reports no record of the app until it is
+registered, so the menu offers the switch rather than predicting whether it will
+be accepted.
 
 For development you can skip the bundle entirely:
 
@@ -81,18 +84,25 @@ swift run MacBookUno
 
 Everything lives in the menu bar item:
 
+The icon itself carries the two states worth knowing without opening anything:
+a slash through it when the effect is switched off, and a warning badge when the
+sensor cannot be read.
+
 | Menu item | What it does |
 | --- | --- |
-| Angle | Live raw and smoothed angle |
-| Fold | Current fold amount |
-| Effect Enabled | Toggle the effect; the overlay is removed when off |
-| Threshold Angle | 20°–120° presets, persisted |
-| Sweep Direction | From the hinge upward, or from the top downward |
-| Animation Style | Frosted Glass or Fold Plane |
-| Preview | A slider that drives the effect from a pretend angle |
+| Effect | Toggle the effect; the overlay is removed when off |
+| *(slider)* | Drives the effect from a pretend angle, and the row beneath it hands control back to the lid |
+| Threshold | 20°–120° presets, persisted |
+| Style | Frosted Glass or Fold Plane |
+| Sweep | From the hinge upward, or from the top downward |
+| Sensor | Live angle, fold amount, and which field is being read |
 | Open at Login | Register the app with `SMAppService` |
-| Status | Whether the sensor is being read, and from which field |
 | Quit | Exit |
+
+The order is deliberate: the switch first, then the slider you reach for while
+tuning, then the settings, and the live readings last. They used to occupy the
+first two rows, where the eye lands, despite being the one thing here you never
+act on.
 
 ### Seeing the effect without moving the lid
 
@@ -382,7 +392,7 @@ Sources/
     PlaneFoldStyle.swift        Fold Plane, captured desktop on a leaning plane
     ScreenCapture.swift         ScreenCaptureKit one-shot and live stream
     FoldMask.swift              Gradient mask for the frosted region
-    FoldPreview.swift           In-menu slider that fakes an angle
+    MenuSlider.swift            Slider that lives inside a menu
     LoginItem.swift             SMAppService registration
     FoldController.swift        Angle -> progress mapping, 60 Hz frame loop
     PatternBackdrop.swift       --pattern measurement backdrop

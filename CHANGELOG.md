@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The menu is reordered around what you came to do: the effect's switch first,
+  then the preview slider, then the settings, and the live readings last, in a
+  `Sensor` submenu. The angle and fold rows used to occupy the first two lines,
+  where the eye lands, despite being the one thing in the menu nobody acts on.
+- The preview slider moved out of its submenu and into the menu itself. It is
+  the most-handled control there and was two clicks away; nudging it by accident
+  is survivable now that a preview releases itself.
+- The menu bar icon carries state: a slash through it when the effect is off, a
+  warning badge when the sensor cannot be read. It is the only thing the app
+  says without being opened.
+- Shorter titles - `Threshold`, `Style`, `Sweep`, and `From the top` in place of
+  `From top, downward` - and the Frosted Glass style is named that in the menu
+  rather than `Blur`, matching the documentation. `Angle` also appeared in two
+  unrelated rows.
+- `Open at Login` is no longer greyed out when `SMAppService` reports
+  `notFound`. That is what a stock build gets wherever the bundle lives -
+  measured from the build directory, from `~/Applications` and from a temporary
+  directory - and the cause is not something the app can establish; a
+  self-signed bundle carrying no Team ID is the likeliest reason, but it is a
+  guess. The row now offers itself, and shows whatever macOS says if it refuses.
+  It previously claimed the app needed to be run from a bundle, which was simply
+  wrong.
+- The version is shown in the menu, not only behind `--version`.
+
+### Fixed
+
+- The angle and fold readings no longer sit stale while the menu is open. They
+  are refreshed from the frame loop, and that loop idles while the lid is still,
+  so opening the menu now wakes it.
+
 ### Added
 
 - **Preview slider** in the menu. It feeds the effect a pretend angle, so the
