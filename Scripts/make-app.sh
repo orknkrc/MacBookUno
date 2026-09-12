@@ -42,7 +42,10 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>CFBundlePackageType</key>         <string>APPL</string>
     <key>CFBundleShortVersionString</key>  <string>$VERSION</string>
     <key>CFBundleVersion</key>             <string>$VERSION</string>
-    <key>LSMinimumSystemVersion</key>      <string>13.0</string>
+    <!-- Must track Package.swift. The Fold Plane style uses SCScreenshotManager,
+         which is macOS 14; declaring 13 here lets the app install on a system
+         where it cannot run. -->
+    <key>LSMinimumSystemVersion</key>      <string>14.0</string>
     <key>NSHighResolutionCapable</key>     <true/>
     <!-- No Dock icon and no app menu: menu bar item only. -->
     <key>LSUIElement</key>                 <true/>
