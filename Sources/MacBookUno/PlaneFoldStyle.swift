@@ -27,6 +27,18 @@ final class PlaneFoldStyle: FoldStyleRenderer {
     private static let maxBlurRadius: CGFloat = 28
     /// How much light the far end of the plane loses at full fold.
     private static let maxShade: CGFloat = 0.5
+    /// The fold range over which the plane fades in, and so also out.
+    ///
+    /// The plane can never be as sharp as the screen it is copying. Any
+    /// transform at all puts the captured pixels through bilinear resampling and
+    /// breaks their alignment with the display grid, and that softness does not
+    /// go to zero as the fold does: measured on a static region, the plane is
+    /// 22% softer than the real screen even at a fold of 0.006, where the lean
+    /// is a quarter of a degree and every filter is already switched off.
+    ///
+    /// So there is no angle at which the plane can simply be removed without the
+    /// screen snapping into focus. It has to be dissolved instead.
+    private static let fadeSpan: CGFloat = 0.08
     /// How wide the plane's edges fade out at full fold, in points.
     private static let maxFeather: CGFloat = 120
 
@@ -166,6 +178,10 @@ final class PlaneFoldStyle: FoldStyleRenderer {
         plane.isHidden = false
 
         let p = CGFloat(min(max(progress, 0), 1))
+        // Cross-fade with the screen underneath rather than cutting to it. The
+        // void's hole covers the whole panel at this end of the range, so what
+        // is behind the plane really is the live screen.
+        plane.opacity = Float(min(1, p / PlaneFoldStyle.fadeSpan))
         // Full size. The fade needs a dark margin to happen in, and the keystone
         // already supplies one that grows with the fold: at half fold the
         // perspective pulls the far edge 185 points in from the screen on each

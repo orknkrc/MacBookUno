@@ -291,6 +291,16 @@ bright. Measured against an unfiltered capture, that put a uniform +15/255 white
 haze over the whole screen from the moment the effect began. Saturation is safe
 because it is a ratio about the pixel's own luma and leaves brightness alone.
 
+The plane is dissolved in and out rather than switched on and off. It can never
+be as sharp as the screen it is copying — any transform at all puts the captured
+pixels through bilinear resampling and breaks their alignment with the display
+grid — and that softness does not fall away as the fold does: measured on a
+static region, the plane is still 12% softer than the real screen at a fold of
+0.002, where the lean is a twentieth of a degree and every filter is already
+switched off. So there is no angle at which it can simply be removed without the
+screen snapping into focus. Fading it over the first 8% of the fold takes the
+step at the cut-off from 11.9% to 0.5%.
+
 Cost: about **3.5% CPU** while the plane is on screen, against 0.2% idle. It
 only runs below the threshold angle.
 

@@ -69,14 +69,21 @@ final class FoldOverlayWindow: NSWindow {
     func apply(progress: Double, direction: SweepDirection, style: FoldStyle) {
         let p = min(max(progress, 0), 1)
 
-        if p < 0.005 {
+        let scale = backingScaleFactor > 0 ? backingScaleFactor : 2
+
+        if p <= 0 {
+            // Hand the renderer the zero before the window goes away. Returning
+            // here early instead meant a style that holds a resource - the Fold
+            // Plane holds a screen capture - was never told the effect had
+            // ended, so it kept capturing for the rest of the session.
+            renderer?.apply(progress: 0, direction: direction,
+                            bounds: container.bounds, scale: scale)
             if isVisible { orderOut(nil) }
             return
         }
         if !isVisible { orderFrontRegardless() }
 
         install(style: style)
-        let scale = backingScaleFactor > 0 ? backingScaleFactor : 2
         renderer?.apply(progress: p, direction: direction, bounds: container.bounds, scale: scale)
     }
 

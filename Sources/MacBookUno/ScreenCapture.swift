@@ -113,6 +113,17 @@ final class DisplayStream: NSObject, SCStreamOutput {
     /// "started and failed".
     private(set) var isRunning = false
 
+    /// Set for as long as the asynchronous set-up is in flight.
+    ///
+    /// `stream` cannot carry that on its own: it is only assigned once set-up
+    /// finishes, and the frame loop calls `start` on every frame until then. So
+    /// the nil check let a fresh SCStream be created on each of those frames -
+    /// measured, five live captures for one fold, four of them orphaned: never
+    /// stopped, and still delivering frames into the same handler.
+    private var starting = false
+    /// `stop` arriving while the set-up is still in flight.
+    private var stopRequested = false
+
     /// Called on the main queue when the feed cannot start, with a message fit
     /// to show a user. Screen Recording is granted per binary, so this fires
     /// routinely during development when switching between builds.
@@ -121,22 +132,27 @@ final class DisplayStream: NSObject, SCStreamOutput {
     /// Starts the feed. `onFrame` is called on the main queue.
     func start(excludingWindowNumber excluded: Int?,
                onFrame: @escaping (IOSurfaceRef) -> Void) {
-        guard stream == nil else { return }
+        guard stream == nil, !starting else { return }
+        starting = true
+        stopRequested = false
         self.onFrame = onFrame
 
         Task { [weak self] in
             guard let self else { return }
             guard let displayID = ScreenCapture.internalDisplayID else {
                 self.report(ScreenCapture.Failure.noInternalDisplay.description)
+                self.finishStarting(nil)
                 return
             }
             guard let content = try? await SCShareableContent.excludingDesktopWindows(
                 false, onScreenWindowsOnly: true) else {
                 self.report(ScreenCapture.Failure.denied.description)
+                self.finishStarting(nil)
                 return
             }
             guard let display = content.displays.first(where: { $0.displayID == displayID }) else {
                 self.report(ScreenCapture.Failure.noInternalDisplay.description)
+                self.finishStarting(nil)
                 return
             }
 
@@ -166,6 +182,21 @@ final class DisplayStream: NSObject, SCStreamOutput {
                 try await stream.startCapture()
             } catch {
                 self.report("Could not start the screen feed: \(error.localizedDescription)")
+                self.finishStarting(nil)
+                return
+            }
+            self.finishStarting(stream)
+        }
+    }
+
+    /// Adopts the stream that finished starting, or drops it if the feed was
+    /// stopped while the set-up was still in flight.
+    private func finishStarting(_ stream: SCStream?) {
+        DispatchQueue.main.async {
+            self.starting = false
+            guard let stream else { return }
+            guard !self.stopRequested else {
+                Task { try? await stream.stopCapture() }
                 return
             }
             self.stream = stream
@@ -179,6 +210,9 @@ final class DisplayStream: NSObject, SCStreamOutput {
     }
 
     func stop() {
+        // A stop can land before the set-up finishes; remember it so the stream
+        // that arrives afterwards is dropped rather than left running.
+        if starting { stopRequested = true }
         guard let stream else { return }
         self.stream = nil
         isRunning = false

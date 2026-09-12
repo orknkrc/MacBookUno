@@ -27,6 +27,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The screen no longer snaps into focus when the effect ends. The plane can
+  never be as sharp as the screen it is copying - any transform puts the
+  captured pixels through bilinear resampling and breaks their alignment with
+  the display grid - and that softness does not fall away as the fold does:
+  measured on a static region, the plane was still 12% softer than the real
+  screen at a fold of 0.002, where the lean is a twentieth of a degree and every
+  filter is already off. There is therefore no angle at which the plane can be
+  removed cleanly, so it is dissolved instead, over the first 8% of the fold.
+  The step at the cut-off went from 11.9% to 0.5%.
+- The screen capture is stopped when the effect ends. `FoldOverlayWindow.apply`
+  returned before reaching the renderer once the fold hit zero, so the Fold
+  Plane was never told the effect was over and kept capturing for the rest of
+  the session, with the screen-recording indicator lit.
+- Only one capture is started per fold. `DisplayStream.start` guarded on its
+  `stream` property, which is assigned only after the asynchronous set-up
+  finishes, so the frame loop created a fresh `SCStream` on every frame until
+  the first one came up - five live captures for one fold, four of them
+  orphaned: never stopped, and still delivering frames into the same handler.
 - The real screen no longer shows through the Fold Plane, sharp beside the
   leaning blurred copy of itself. The void was cut with a straight line from the
   hinge corner to the far corner, but the plane's border softness follows the
