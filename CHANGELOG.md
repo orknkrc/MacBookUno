@@ -7,37 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
-
-- The menu is reordered around what you came to do: the effect's switch first,
-  then the preview slider, then the settings, and the live readings last, in a
-  `Sensor` submenu. The angle and fold rows used to occupy the first two lines,
-  where the eye lands, despite being the one thing in the menu nobody acts on.
-- The preview slider moved out of its submenu and into the menu itself. It is
-  the most-handled control there and was two clicks away; nudging it by accident
-  is survivable now that a preview releases itself.
-- The menu bar icon carries state: a slash through it when the effect is off, a
-  warning badge when the sensor cannot be read. It is the only thing the app
-  says without being opened.
-- Shorter titles - `Threshold`, `Style`, `Sweep`, and `From the top` in place of
-  `From top, downward` - and the Frosted Glass style is named that in the menu
-  rather than `Blur`, matching the documentation. `Angle` also appeared in two
-  unrelated rows.
-- `Open at Login` is no longer greyed out when `SMAppService` reports
-  `notFound`. That is what a stock build gets wherever the bundle lives -
-  measured from the build directory, from `~/Applications` and from a temporary
-  directory - and the cause is not something the app can establish; a
-  self-signed bundle carrying no Team ID is the likeliest reason, but it is a
-  guess. The row now offers itself, and shows whatever macOS says if it refuses.
-  It previously claimed the app needed to be run from a bundle, which was simply
-  wrong.
-- The version is shown in the menu, not only behind `--version`.
-
-### Fixed
-
-- The angle and fold readings no longer sit stale while the menu is open. They
-  are refreshed from the frame loop, and that loop idles while the lid is still,
-  so opening the menu now wakes it.
+## [0.4.0] - 2026-09-12
 
 ### Added
 
@@ -66,7 +36,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   white haze - multiplying is a ratio and cannot lift a dark pixel, so the
   linear working space costs nothing.
 
+### Changed
+
+- The menu is reordered around what you came to do: the effect's switch first,
+  then the preview slider, then the settings, and the live readings last, in a
+  `Sensor` submenu. The angle and fold rows used to occupy the first two lines,
+  where the eye lands, despite being the one thing in the menu nobody acts on.
+- The preview slider moved out of its submenu and into the menu itself. It is
+  the most-handled control there and was two clicks away; nudging it by accident
+  is survivable now that a preview releases itself.
+- The menu bar icon carries state: a slash through it when the effect is off, a
+  warning badge when the sensor cannot be read. It is the only thing the app
+  says without being opened.
+- Shorter titles - `Threshold`, `Style`, `Sweep`, and `From the top` in place of
+  `From top, downward` - and the Frosted Glass style is named that in the menu
+  rather than `Blur`, matching the documentation. `Angle` also appeared in two
+  unrelated rows.
+- `Open at Login` is no longer greyed out when `SMAppService` reports
+  `notFound`. That is what a stock build gets wherever the bundle lives -
+  measured from the build directory, from `~/Applications` and from a temporary
+  directory - and the cause is not something the app can establish; a
+  self-signed bundle carrying no Team ID is the likeliest reason, but it is a
+  guess. The row now offers itself, and shows whatever macOS says if it refuses.
+  It previously claimed the app needed to be run from a bundle, which was simply
+  wrong.
+- The version is shown in the menu, not only behind `--version`.
+
 ### Fixed
+
+- The real screen no longer shows through the Fold Plane, sharp beside the
+  leaning blurred copy of itself. The void was cut with a straight line from the
+  hinge corner to the far corner, but the plane's border softness follows the
+  blur ramp, and where that ramp ran ahead of the line the plane was half
+  transparent with nothing behind it. The void now samples the same ramp along
+  its whole length, and reaches 2.5 feather widths in rather than 1.5 - the
+  distance the variable blur actually needs before the plane is opaque, which
+  had been guessed rather than measured.
+
+  The leak moved as the lid closed, from the top of the screen at a quarter fold
+  to the bottom at nine tenths, because the ramp's knee travels towards the
+  hinge. That is what made one fault look like several. Measured by tinting the
+  three layers apart - plane red, void blue, so any green pixel is provably the
+  real screen:
+
+  | Fold | Before | After |
+  | --- | --- | --- |
+  | 12% | 0.004% | 0.004% |
+  | 25% | 0.007% | 0.000% |
+  | 50% | 0.024% | 0.000% |
+  | 75% | 0.053% | 0.000% |
+  | 90% | 0.127% | 0.000% |
 
 - The screen no longer snaps into focus when the effect ends. The plane can
   never be as sharp as the screen it is copying - any transform puts the
@@ -86,28 +105,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   finishes, so the frame loop created a fresh `SCStream` on every frame until
   the first one came up - five live captures for one fold, four of them
   orphaned: never stopped, and still delivering frames into the same handler.
-- The real screen no longer shows through the Fold Plane, sharp beside the
-  leaning blurred copy of itself. The void was cut with a straight line from the
-  hinge corner to the far corner, but the plane's border softness follows the
-  blur ramp, and where that ramp ran ahead of the line the plane was half
-  transparent with nothing behind it. The void now samples the same ramp along
-  its whole length, and reaches 2.5 feather widths in rather than 1.5 - the
-  distance the variable blur actually needs before the plane is opaque, which
-  had been guessed rather than measured.
-- Measured by tinting the three layers apart - plane red, void blue, so any
-  green pixel is provably the real screen - across the fold:
-
-  | Fold | Before | After |
-  | --- | --- | --- |
-  | 12% | 0.004% | 0.004% |
-  | 25% | 0.007% | 0.000% |
-  | 50% | 0.024% | 0.000% |
-  | 75% | 0.053% | 0.000% |
-  | 90% | 0.127% | 0.000% |
-
-  The leak also moved as the lid closed, from the top of the screen at a quarter
-  fold to the bottom at nine tenths, because the ramp's knee travels towards the
-  hinge. That is what made it look like several different faults.
+- The angle and fold readings no longer sit stale while the menu is open. They
+  are refreshed from the frame loop, and that loop idles while the lid is still,
+  so opening the menu now wakes it.
 
 ## [0.3.0] - 2026-09-12
 
@@ -285,7 +285,8 @@ First working release.
   than stretched to the view; the mask is built at
   `bounds.height * backingScaleFactor` to compensate.
 
-[Unreleased]: https://github.com/orknkrc/MacBookUno/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/orknkrc/MacBookUno/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/orknkrc/MacBookUno/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/orknkrc/MacBookUno/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/orknkrc/MacBookUno/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/orknkrc/MacBookUno/releases/tag/v0.1.0
