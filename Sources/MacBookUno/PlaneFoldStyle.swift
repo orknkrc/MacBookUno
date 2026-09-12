@@ -25,6 +25,8 @@ final class PlaneFoldStyle: FoldStyleRenderer {
     private static let perspectiveDistance: CGFloat = 1400
     /// Blur radius in points at full fold.
     private static let maxBlurRadius: CGFloat = 28
+    /// How much light the far end of the plane loses at full fold.
+    private static let maxShade: CGFloat = 0.5
     /// How wide the plane's edges fade out at full fold, in points.
     private static let maxFeather: CGFloat = 120
 
@@ -204,6 +206,24 @@ final class PlaneFoldStyle: FoldStyleRenderer {
                    feather: feather)
     }
 
+    /// The blur ramp, as fractions of the panel height measured from the hinge:
+    /// no blur below `low`, full radius above `high`.
+    ///
+    /// Both the blur mask and the void are built from this. They have to agree -
+    /// the void's job is to sit behind every part of the plane that is not fully
+    /// opaque, and this ramp is what decides how far in that reaches.
+    private static func rampBounds(progress p: Double) -> (low: Double, high: Double) {
+        let reach = 1.25 - p * 1.5
+        return (max(0, reach - 0.45), min(1, reach + 0.35))
+    }
+
+    /// How soft the border is at a given height: 0 at the hinge, 1 at full.
+    private static func rampValue(atHeightFraction f: Double, progress p: Double) -> Double {
+        let (low, high) = rampBounds(progress: p)
+        guard high > low else { return f >= high ? 1 : 0 }
+        return min(1, max(0, (f - low) / (high - low)))
+    }
+
     /// Where a point on the plane lands on screen, once it has been rotated
     /// about the hinge and put through the perspective divide.
     ///
@@ -236,29 +256,55 @@ final class PlaneFoldStyle: FoldStyleRenderer {
     /// real screen shows through the half-transparent band - sharp, beside the
     /// leaning blurred copy of itself.
     ///
-    /// Since the feather now tapers to nothing at the hinge, so does the hole:
-    /// its bottom corners sit on the plane's true corners and only the far ones
-    /// are pulled in. The straight edge between them tracks the ramp closely
-    /// enough, which the red-veil measurement confirms.
+    /// So the hole is inset by the *local* softness at every height, not by one
+    /// figure. A straight line from the hinge corner to the far corner was tried
+    /// and leaks, because the border's width follows the blur ramp while the
+    /// line rises evenly. Where the ramp runs ahead of the line, the plane is
+    /// half transparent with nothing behind it.
+    ///
+    /// That gap moves. The ramp's knee sits at `high`, which falls from the top
+    /// of the panel towards the hinge as the lid closes, and the leak follows
+    /// it: measured with the layers tinted apart, it sat in the top tenth of the
+    /// screen at a quarter fold and in the bottom tenth at nine tenths.
     private func updateVeil(progress p: CGFloat, bounds: NSRect,
                             size: CGSize, feather: CGFloat) {
-        let opaqueAt = feather * 1.5
         let halfWidth = size.width / 2
-        let corners = [
-            PlaneFoldStyle.project(x: -halfWidth, y: 0, progress: p, bounds: bounds),
-            PlaneFoldStyle.project(x: halfWidth, y: 0, progress: p, bounds: bounds),
-            PlaneFoldStyle.project(x: halfWidth - opaqueAt, y: max(0, size.height - opaqueAt),
-                                   progress: p, bounds: bounds),
-            PlaneFoldStyle.project(x: -halfWidth + opaqueAt, y: max(0, size.height - opaqueAt),
-                                   progress: p, bounds: bounds),
-        ]
+        // Enough samples to follow the ramp's knee; it costs nothing.
+        let steps = 16
+        // The plane needs about this much of the feather behind it before it is
+        // genuinely opaque.
+        let reachIn = feather * 2.5
+
+        func inset(atHeight y: CGFloat) -> CGFloat {
+            let f = size.height > 0 ? Double(y / size.height) : 0
+            return reachIn * CGFloat(PlaneFoldStyle.rampValue(atHeightFraction: f,
+                                                              progress: Double(p)))
+        }
+
+        // Up the right side and back down the left. The hinge edge is the
+        // straight line that closes the path, with no inset at all.
+        var points: [CGPoint] = []
+        for step in 0...steps {
+            let y = size.height * CGFloat(step) / CGFloat(steps)
+            let pulled = inset(atHeight: y)
+            points.append(PlaneFoldStyle.project(x: halfWidth - pulled,
+                                                 y: min(y, size.height - pulled),
+                                                 progress: p, bounds: bounds))
+        }
+        for step in stride(from: steps, through: 0, by: -1) {
+            let y = size.height * CGFloat(step) / CGFloat(steps)
+            let pulled = inset(atHeight: y)
+            points.append(PlaneFoldStyle.project(x: -halfWidth + pulled,
+                                                 y: min(y, size.height - pulled),
+                                                 progress: p, bounds: bounds))
+        }
 
         let path = CGMutablePath()
         path.addRect(bounds)
-        path.move(to: corners[0])
-        for corner in corners.dropFirst() { path.addLine(to: corner) }
+        path.move(to: points[0])
+        for point in points.dropFirst() { path.addLine(to: point) }
         path.closeSubpath()
-        // Even-odd, so the quad punches a hole in the full-screen rectangle.
+        // Even-odd, so the outline punches a hole in the full-screen rectangle.
         veil.path = path
     }
 
@@ -275,11 +321,12 @@ final class PlaneFoldStyle: FoldStyleRenderer {
             return
         }
 
+        let (lowFraction, highFraction) = PlaneFoldStyle.rampBounds(progress: p)
         let reach = 1.25 - p * 1.5
         if maskImage == nil || abs(maskReach - reach) > 0.01 {
             maskReach = reach
-            let low = max(0, reach - 0.45) * pixelHeight
-            let high = min(1, reach + 0.35) * pixelHeight
+            let low = lowFraction * pixelHeight
+            let high = highFraction * pixelHeight
             // Core Image's origin is bottom left, so "white at the top" means the
             // brighter end sits at the larger y.
             let gradient = CIFilter(name: "CILinearGradient")
@@ -344,6 +391,33 @@ final class PlaneFoldStyle: FoldStyleRenderer {
         // The rectangle is at the plane's true size, not inset, so at the hinge
         // the edge lands on the physical border of the screen where a hard edge
         // cannot be seen at all.
+        // Shade the far end.
+        //
+        // A surface turning away from the light gets darker, and after the
+        // perspective this is the strongest depth cue there is - without it the
+        // plane reads as a blurred picture lying flat rather than a panel
+        // leaning back. The ramp is the same one the blur uses, so the shading
+        // and the softening arrive together.
+        //
+        // A multiply, deliberately, and not the brightness control that caused
+        // the earlier white haze. Multiplying is a ratio: it scales every pixel
+        // by the same factor and cannot lift a dark one, so Core Image's linear
+        // working space costs nothing here.
+        var shade: CIFilter?
+        if let ramp = CIFilter(name: "CILinearGradient"),
+           let multiply = CIFilter(name: "CIMultiplyCompositing") {
+            let dark = 1 - PlaneFoldStyle.maxShade * CGFloat(p)
+            // Core Image's origin is bottom left, so the hinge is y = 0.
+            ramp.setValue(CIVector(x: pixelWidth / 2, y: 0), forKey: "inputPoint0")
+            ramp.setValue(CIColor.white, forKey: "inputColor0")
+            ramp.setValue(CIVector(x: pixelWidth / 2, y: pixelHeight), forKey: "inputPoint1")
+            ramp.setValue(CIColor(red: dark, green: dark, blue: dark), forKey: "inputColor1")
+            let gradient = ramp.outputImage?
+                .cropped(to: CGRect(x: 0, y: 0, width: pixelWidth, height: pixelHeight))
+            multiply.setValue(gradient, forKey: kCIInputBackgroundImageKey)
+            shade = multiply
+        }
+
         var edge: CIFilter?
         if feather > 1,
            let solid = CIFilter(name: "CIConstantColorGenerator") {
@@ -362,7 +436,9 @@ final class PlaneFoldStyle: FoldStyleRenderer {
             edge?.setValue(mask, forKey: kCIInputBackgroundImageKey)
         }
 
-        plane.filters = [blur, glass, edge].compactMap { $0 }
+        // Shade before the edge mask: the mask only touches alpha, and putting
+        // it last keeps the fade from being multiplied away.
+        plane.filters = [blur, glass, shade, edge].compactMap { $0 }
     }
 
     private func startFeedIfNeeded() {

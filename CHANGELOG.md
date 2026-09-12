@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Preview slider** in the menu. It feeds the effect a pretend angle, so the
+  fold can be watched at 40 degrees with the lid wide open and the screen
+  readable. Tuning previously meant moving the lid, which cannot be done while
+  looking at the screen, or relaunching with `--simulate`.
+- **Open at Login**, via `SMAppService`. It needs no helper target and no extra
+  entitlement. Running outside an app bundle and the user declining it in
+  System Settings are both reported rather than shown as a tick that does
+  nothing.
+- The far end of the Fold Plane is **shaded down**, by up to half its brightness
+  at full fold. A surface turning away from the light gets darker, and after the
+  perspective this is the strongest depth cue there is; without it the plane
+  reads as a blurred picture lying flat. It is a multiply against the same
+  gradient the blur uses, not the brightness control that caused the earlier
+  white haze - multiplying is a ratio and cannot lift a dark pixel, so the
+  linear working space costs nothing.
+
+### Fixed
+
+- The real screen no longer shows through the Fold Plane, sharp beside the
+  leaning blurred copy of itself. The void was cut with a straight line from the
+  hinge corner to the far corner, but the plane's border softness follows the
+  blur ramp, and where that ramp ran ahead of the line the plane was half
+  transparent with nothing behind it. The void now samples the same ramp along
+  its whole length, and reaches 2.5 feather widths in rather than 1.5 - the
+  distance the variable blur actually needs before the plane is opaque, which
+  had been guessed rather than measured.
+- Measured by tinting the three layers apart - plane red, void blue, so any
+  green pixel is provably the real screen - across the fold:
+
+  | Fold | Before | After |
+  | --- | --- | --- |
+  | 12% | 0.004% | 0.004% |
+  | 25% | 0.007% | 0.000% |
+  | 50% | 0.024% | 0.000% |
+  | 75% | 0.053% | 0.000% |
+  | 90% | 0.127% | 0.000% |
+
+  The leak also moved as the lid closed, from the top of the screen at a quarter
+  fold to the bottom at nine tenths, because the ramp's knee travels towards the
+  hinge. That is what made it look like several different faults.
+
 ## [0.3.0] - 2026-09-12
 
 ### Added

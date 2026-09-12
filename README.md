@@ -68,8 +68,8 @@ open build/MacBookUno.app
 A laptop icon appears in the menu bar. To quit: menu bar icon → **Quit**, or
 `pkill -x MacBookUno`.
 
-To launch it at login, add `build/MacBookUno.app` under
-System Settings → General → Login Items.
+To launch it at login, use **Open at Login** in the menu. macOS may ask you to
+allow it under System Settings → General → Login Items the first time.
 
 For development you can skip the bundle entirely:
 
@@ -89,13 +89,22 @@ Everything lives in the menu bar item:
 | Threshold Angle | 20°–120° presets, persisted |
 | Sweep Direction | From the hinge upward, or from the top downward |
 | Animation Style | Frosted Glass or Fold Plane |
+| Preview | A slider that drives the effect from a pretend angle |
+| Open at Login | Register the app with `SMAppService` |
 | Status | Whether the sensor is being read, and from which field |
 | Quit | Exit |
 
 ### Seeing the effect without moving the lid
 
 With the default 60° threshold and normal use between 85° and 132°, nothing
-happens while you work — that is the intended behavior. To actually see it:
+happens while you work — that is the intended behavior.
+
+The easiest way to see it, and the only practical way to tune it, is the
+**Preview** slider in the menu: it feeds the effect a pretend angle, so you can
+watch the fold at 40° while the lid is wide open and the screen is readable.
+**Follow the Lid** hands control back to the sensor.
+
+The same thing is available from the command line:
 
 ```bash
 swift run MacBookUno -- --sweep        # animate the angle up and down
@@ -216,9 +225,19 @@ effect starts. A vertical gradient was tried first and is not enough: it darkens
 the top correctly but leaves the side margins transparent, and the real desktop
 showing beside the leaning copy of itself reads as a double image. The hole has to stop
 where the plane becomes genuinely opaque, or the real screen shows through the
-half-transparent band — sharp, beside the leaning blurred copy of itself. Since
-the feather tapers to nothing at the hinge, so does the hole: its bottom corners
-sit on the plane's true corners and only the far ones are pulled in. Measured across the panel in ten bands, the top band goes 37.3 → 37.2 →
+half-transparent band — sharp, beside the leaning blurred copy of itself. So it
+is inset by the *local* softness at every height, sampled from the same ramp,
+and by 2.5 feather widths rather than one.
+
+Both numbers were earned. A straight line from the hinge corner to the far
+corner leaks, because the border's width follows the ramp while the line rises
+evenly; and the leak *moves* as the lid closes — top of the screen at a quarter
+fold, bottom at nine tenths — because the ramp's knee travels towards the hinge,
+which is what made one fault look like several. The measurement that settled it
+tints the three layers apart: the plane red, the void blue, so any green pixel
+is provably the real screen and no assumption about the desktop's colours is
+needed. Leaked pixels at 75% and 90% fold went from 0.053% and 0.127% of the
+screen to zero. Measured across the panel in ten bands, the top band goes 37.3 → 37.2 →
 26.5 → 10.0 as the fold runs 0 → 12% → 30% → 50%, while the bottom band stays
 within 3.5 of untouched throughout.
 
@@ -253,6 +272,15 @@ edge lands on the physical border of the screen, where a hard edge cannot be
 seen. The margin the fade needs higher up is supplied by the keystone, which
 widens with the fold — 185 points per side at half fold against a 60 point
 feather.
+
+The far end of the plane is also shaded down, by up to half its brightness at
+full fold. A surface turning away from the light gets darker, and after the
+perspective this is the strongest depth cue available — without it the plane
+reads as a blurred picture lying flat rather than a panel leaning back. It is a
+`CIMultiplyCompositing` pass against the same gradient the blur uses, so the
+shading and the softening arrive together. A multiply and not the brightness
+control, deliberately: multiplying is a ratio, it scales every pixel by the same
+factor and cannot lift a dark one, so the linear working space costs nothing.
 
 A blur alone reads as grey mist, because blurring averages colour away, so the
 saturation is pushed back up to make it read as glass. Brightness and contrast
@@ -418,6 +446,8 @@ Sources/
     PlaneFoldStyle.swift        Fold Plane, captured desktop on a leaning plane
     ScreenCapture.swift         ScreenCaptureKit one-shot and live stream
     FoldMask.swift              Gradient mask for the frosted region
+    FoldPreview.swift           In-menu slider that fakes an angle
+    LoginItem.swift             SMAppService registration
     FoldController.swift        Angle -> progress mapping, 60 Hz frame loop
     PatternBackdrop.swift       --pattern measurement backdrop
 Scripts/make-app.sh             Builds MacBookUno.app
