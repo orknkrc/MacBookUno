@@ -104,6 +104,11 @@ The easiest way to see it, and the only practical way to tune it, is the
 watch the fold at 40° while the lid is wide open and the screen is readable.
 **Follow the Lid** hands control back to the sensor.
 
+A preview ends by itself ten seconds after the menu closes. That is not a
+convenience: the overlay sits above the menu bar, so a deep preview hides the
+status item you would use to cancel it. The clock only runs while the menu is
+shut — with the slider in front of you there is nothing to be rescued from.
+
 The same thing is available from the command line:
 
 ```bash

@@ -17,8 +17,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let directionItem = NSMenuItem(title: "Sweep Direction", action: nil, keyEquivalent: "")
     private let styleItem = NSMenuItem(title: "Animation Style", action: nil, keyEquivalent: "")
     private let previewItem = NSMenuItem(title: "Preview", action: nil, keyEquivalent: "")
-    private let loginItem = NSMenuItem(title: "Open at Login", action: #selector(toggleLoginItem), keyEquivalent: "")
+
+    /// How long a preview survives after the menu closes.
+    ///
+    /// The overlay sits above the menu bar, so a deep preview hides the status
+    /// item that would let you cancel it - not "hard to find", invisible. A
+    /// preview left running is therefore a way to lock yourself out of the app,
+    /// and it has to end on its own.
+    ///
+    /// The clock starts when the menu closes, not on every change of the angle.
+    /// While the menu is open the slider is right there, so a countdown would
+    /// only snatch the view away mid-inspection; the risk begins when the menu
+    /// goes.
+    private static let previewHold: TimeInterval = 10
+    /// How long the angle takes to travel back to the lid's own.
+    private static let previewRelease: TimeInterval = 0.45
+
+    private var previewTimer: Timer?
+    /// Set while the preview came from the slider. `--simulate` is a debug flag
+    /// that is meant to hold, so it is deliberately not swept up by any of this.
+    private var previewFromSlider = false
+    /// The release in flight: where it started and when.
+    private var previewReleasing: (from: Double, start: TimeInterval)?
     private let previewView = FoldPreviewView()
+    private let loginItem = NSMenuItem(title: "Open at Login", action: #selector(toggleLoginItem), keyEquivalent: "")
 
     /// Test flags handed over from main.swift.
     var simulatedAngle: Double?
@@ -58,6 +80,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         controller.onUpdate = { [weak self] raw, smoothed, intensity in
             guard let self else { return }
+            self.advancePreviewRelease()
             self.refreshMenuIfVisible(raw: raw, smoothed: smoothed, intensity: intensity)
             self.logIfNeeded(raw: raw, smoothed: smoothed, intensity: intensity)
         }
@@ -209,6 +232,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         previewView.onAngle = { [weak self] angle in
             guard let self else { return }
+            self.previewFromSlider = true
+            self.previewReleasing = nil
+            self.cancelPreviewTimer()
             self.controller.simulatedAngle = angle
             self.updatePreviewTitle()
             // The frame loop idles once nothing is moving, and dragging the
@@ -229,9 +255,50 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func stopPreview() {
+        cancelPreviewTimer()
+        previewReleasing = nil
+        previewFromSlider = false
         controller.simulatedAngle = nil
         previewView.show(angle: nil)
         updatePreviewTitle()
+        controller.wake()
+    }
+
+    private func cancelPreviewTimer() {
+        previewTimer?.invalidate()
+        previewTimer = nil
+    }
+
+    /// Hands the angle back to the lid, easing rather than cutting.
+    ///
+    /// Dropping the pretend angle outright jumps the raw reading by however far
+    /// the preview sat from the real hinge, and anything past the smoother's
+    /// snap threshold arrives in a single frame. That is the same abrupt change
+    /// the plane's dissolve exists to avoid, so the angle is walked back
+    /// instead.
+    private func beginPreviewRelease() {
+        guard previewFromSlider, let from = controller.simulatedAngle else { return }
+        previewReleasing = (from, ProcessInfo.processInfo.systemUptime)
+        controller.wake()
+    }
+
+    private func advancePreviewRelease() {
+        guard let releasing = previewReleasing else { return }
+        let elapsed = ProcessInfo.processInfo.systemUptime - releasing.start
+        let t = min(1, elapsed / AppDelegate.previewRelease)
+        guard t < 1 else {
+            previewReleasing = nil
+            previewFromSlider = false
+            controller.simulatedAngle = nil
+            previewView.show(angle: nil)
+            updatePreviewTitle()
+            controller.wake()
+            return
+        }
+        // Read the lid every frame rather than once: it may be moving.
+        let target = monitor.latestAngle ?? releasing.from
+        let eased = 1 - pow(1 - t, 3)
+        controller.simulatedAngle = releasing.from + (target - releasing.from) * eased
         controller.wake()
     }
 
@@ -343,8 +410,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // The login item can be changed in System Settings behind our back, so
         // it is read fresh every time rather than cached.
         updateLoginTitle()
+        // Back at the controls: the preview is safe again.
+        cancelPreviewTimer()
+        previewReleasing = nil
     }
-    func menuDidClose(_ menu: NSMenu) { menuIsOpen = false }
+
+    func menuDidClose(_ menu: NSMenu) {
+        menuIsOpen = false
+        guard previewFromSlider, controller.simulatedAngle != nil else { return }
+        cancelPreviewTimer()
+        previewTimer = Timer.scheduledTimer(withTimeInterval: AppDelegate.previewHold,
+                                            repeats: false) { [weak self] _ in
+            self?.beginPreviewRelease()
+        }
+    }
 
     /// Updating text while the menu is closed is wasted work; we refresh only
     /// while it is open, throttled to 10 Hz (writing NSMenuItem titles at 60 Hz

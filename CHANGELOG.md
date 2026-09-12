@@ -13,6 +13,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   fold can be watched at 40 degrees with the lid wide open and the screen
   readable. Tuning previously meant moving the lid, which cannot be done while
   looking at the screen, or relaunching with `--simulate`.
+- A preview ends by itself ten seconds after the menu closes, easing the angle
+  back to the lid's own rather than cutting to it. The overlay sits above the
+  menu bar, so a deep preview hides the status item that would cancel it - not
+  hard to find, invisible - which made a left-running preview a way to lock
+  yourself out of the app. The clock runs only while the menu is shut, since a
+  countdown with the slider in view would just snatch the effect away
+  mid-inspection. The easing matters too: the lid is usually far enough from the
+  previewed angle that dropping it outright lands past the smoother's snap
+  threshold and arrives in a single frame.
 - **Open at Login**, via `SMAppService`. It needs no helper target and no extra
   entitlement. Running outside an app bundle and the user declining it in
   System Settings are both reported rather than shown as a tick that does
