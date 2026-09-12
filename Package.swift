@@ -8,7 +8,7 @@ import PackageDescription
 //  - MacBookUno  : the menu bar app (AppKit) with the lid fold effect.
 let package = Package(
     name: "MacBookUno",
-    platforms: [.macOS(.v13)],
+    platforms: [.macOS(.v14)],
     products: [
         .library(name: "LidAngleKit", targets: ["LidAngleKit"]),
         .executable(name: "lidangle", targets: ["lidangle"]),

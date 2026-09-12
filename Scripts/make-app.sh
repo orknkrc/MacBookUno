@@ -52,8 +52,32 @@ PLIST
 
 # App Sandbox is deliberately NOT enabled: there is no entitlements file, so the
 # bundle runs outside the sandbox. The reason is explained in the README (IOKit HID access).
-echo "==> Ad-hoc signing"
-codesign --force --sign - "$APP"
+# Sign with a real identity when one exists, ad-hoc otherwise.
+#
+# This matters for more than tidiness. The Fold Plane style needs Screen
+# Recording permission, and macOS remembers that grant against the app's code
+# signature. An ad-hoc signature is just a hash of the binary, so every rebuild
+# looks like a different app and the permission has to be granted again. A
+# self-signed certificate keeps the identity stable across rebuilds.
+#
+# To create one: Keychain Access > Certificate Assistant > Create a Certificate,
+# type "Code Signing", self-signed. Then either export CODESIGN_IDENTITY or let
+# this script pick it up automatically.
+IDENTITY="${CODESIGN_IDENTITY:-}"
+if [ -z "$IDENTITY" ]; then
+    IDENTITY="$(security find-identity -v -p codesigning 2>/dev/null \
+        | sed -n 's/.*"\(.*\)"$/\1/p' | head -1)"
+fi
+
+if [ -n "$IDENTITY" ]; then
+    echo "==> Signing as: $IDENTITY"
+    codesign --force --options runtime --sign "$IDENTITY" "$APP"
+else
+    echo "==> Ad-hoc signing (no code signing identity found)"
+    echo "    Screen Recording permission will be asked for again after every"
+    echo "    rebuild. See the comment above this line in Scripts/make-app.sh."
+    codesign --force --sign - "$APP"
+fi
 
 echo
 echo "Ready: $APP"
